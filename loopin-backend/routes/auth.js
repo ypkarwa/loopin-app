@@ -19,7 +19,7 @@ router.get('/google/callback',
   (req, res) => {
     // Successful authentication, redirect to frontend
     const clientURL = process.env.CLIENT_URL || 'http://localhost:3000';
-    res.redirect(`${clientURL}/dashboard?auth=success`);
+    res.redirect(`${clientURL}/?auth=success`);
   }
 );
 

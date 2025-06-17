@@ -2,6 +2,16 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require('../models/User');
 
+// Helper function to generate unique link
+function generateUniqueLink() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
 // Serialize user for session
 passport.serializeUser((user, done) => {
   done(null, user._id);
@@ -58,7 +68,8 @@ passport.use(new GoogleStrategy({
         name: profile.displayName,
         avatar: profile.photos[0]?.value,
         isVerified: true,
-        lastActive: new Date()
+        lastActive: new Date(),
+        shareableLink: generateUniqueLink() // Explicitly generate shareableLink
       });
 
       await newUser.save();
