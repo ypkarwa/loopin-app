@@ -1,5 +1,5 @@
 const express = require('express');
-const { requireAuth } = require('./auth');
+const { verifyToken } = require('./auth');
 const User = require('../models/User');
 const Circle = require('../models/Circle');
 const Notification = require('../models/Notification');
@@ -8,7 +8,7 @@ const router = express.Router();
 // @route   POST /api/locations/update
 // @desc    Update user's current location
 // @access  Private
-router.post('/update', requireAuth, async (req, res) => {
+router.post('/update', verifyToken, async (req, res) => {
   try {
     const { city, country, latitude, longitude, isPublic } = req.body;
 
@@ -59,7 +59,7 @@ router.post('/update', requireAuth, async (req, res) => {
 // @route   POST /api/locations/privacy
 // @desc    Update location privacy setting
 // @access  Private
-router.post('/privacy', requireAuth, async (req, res) => {
+router.post('/privacy', verifyToken, async (req, res) => {
   try {
     const { isPublic } = req.body;
 
@@ -95,7 +95,7 @@ router.post('/privacy', requireAuth, async (req, res) => {
 // @route   GET /api/locations/current
 // @desc    Get user's current location
 // @access  Private
-router.get('/current', requireAuth, (req, res) => {
+router.get('/current', verifyToken, (req, res) => {
   try {
     const location = req.user.currentLocation;
     
@@ -127,7 +127,7 @@ router.get('/current', requireAuth, (req, res) => {
 // @route   GET /api/locations/history
 // @desc    Get user's location history (future feature)
 // @access  Private
-router.get('/history', requireAuth, (req, res) => {
+router.get('/history', verifyToken, (req, res) => {
   // This would require a separate LocationHistory model
   // For now, just return current location
   res.json({
@@ -140,7 +140,7 @@ router.get('/history', requireAuth, (req, res) => {
 // @route   POST /api/locations/check-friends
 // @desc    Check which friends are in the current city
 // @access  Private
-router.post('/check-friends', requireAuth, async (req, res) => {
+router.post('/check-friends', verifyToken, async (req, res) => {
   try {
     const { city, country } = req.body;
 

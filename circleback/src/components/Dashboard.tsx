@@ -82,8 +82,12 @@ const Dashboard: React.FC = () => {
   const fetchFriendsInTown = async () => {
     try {
       setIsLoadingFriends(true);
+      const token = localStorage.getItem('jwt_token');
       const response = await fetch(`${API_BASE_URL}/circles/in-town`, {
-        credentials: 'include'
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       if (response.ok) {
@@ -100,8 +104,12 @@ const Dashboard: React.FC = () => {
   const fetchFriendRequests = async () => {
     try {
       setIsLoadingRequests(true);
+      const token = localStorage.getItem('jwt_token');
       const response = await fetch(`${API_BASE_URL}/circles/requests`, {
-        credentials: 'include'
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       if (response.ok) {
@@ -117,8 +125,12 @@ const Dashboard: React.FC = () => {
 
   const fetchFriends = async () => {
     try {
+      const token = localStorage.getItem('jwt_token');
       const response = await fetch(`${API_BASE_URL}/circles`, {
-        credentials: 'include'
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       if (response.ok) {
@@ -134,12 +146,13 @@ const Dashboard: React.FC = () => {
     if (!location.currentLocation) return;
 
     try {
+      const token = localStorage.getItem('jwt_token');
       await fetch(`${API_BASE_URL}/locations/update`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           city: location.currentLocation.city,
           country: location.currentLocation.country,
@@ -176,12 +189,13 @@ const Dashboard: React.FC = () => {
 
       const shareableCode = extractShareableLinkCode(addFriendLink.trim());
       
+      const token = localStorage.getItem('jwt_token');
       const response = await fetch(`${API_BASE_URL}/circles/request`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           shareableLink: shareableCode
         }),
@@ -208,12 +222,13 @@ const Dashboard: React.FC = () => {
 
   const respondToFriendRequest = async (requestId: string, action: 'accept' | 'decline') => {
     try {
+      const token = localStorage.getItem('jwt_token');
       const response = await fetch(`${API_BASE_URL}/circles/${requestId}/respond`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({ action }),
       });
 

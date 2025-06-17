@@ -1,5 +1,5 @@
 const express = require('express');
-const { requireAuth } = require('./auth');
+const { verifyToken } = require('./auth');
 const Circle = require('../models/Circle');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
@@ -8,7 +8,7 @@ const router = express.Router();
 // @route   GET /api/circles
 // @desc    Get user's circles (friends)
 // @access  Private
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
     console.log(`[DEBUG] Getting circles for user: ${req.user._id} (${req.user.name})`);
     
@@ -55,7 +55,7 @@ router.get('/', requireAuth, async (req, res) => {
 // @route   POST /api/circles/request
 // @desc    Send circle request to a user
 // @access  Private
-router.post('/request', requireAuth, async (req, res) => {
+router.post('/request', verifyToken, async (req, res) => {
   try {
     const { recipientId, shareableLink } = req.body;
     
@@ -133,7 +133,7 @@ router.post('/request', requireAuth, async (req, res) => {
 // @route   POST /api/circles/:circleId/respond
 // @desc    Respond to circle request (accept/decline)
 // @access  Private
-router.post('/:circleId/respond', requireAuth, async (req, res) => {
+router.post('/:circleId/respond', verifyToken, async (req, res) => {
   try {
     const { circleId } = req.params;
     const { action } = req.body; // 'accept' or 'decline'
@@ -206,7 +206,7 @@ router.post('/:circleId/respond', requireAuth, async (req, res) => {
 // @route   GET /api/circles/requests
 // @desc    Get pending circle requests
 // @access  Private
-router.get('/requests', requireAuth, async (req, res) => {
+router.get('/requests', verifyToken, async (req, res) => {
   try {
     const pendingRequests = await Circle.getPendingRequests(req.user._id);
     
@@ -236,7 +236,7 @@ router.get('/requests', requireAuth, async (req, res) => {
 // @route   DELETE /api/circles/:friendId
 // @desc    Remove friend from circle
 // @access  Private
-router.delete('/:friendId', requireAuth, async (req, res) => {
+router.delete('/:friendId', verifyToken, async (req, res) => {
   try {
     const { friendId } = req.params;
     
@@ -265,7 +265,7 @@ router.delete('/:friendId', requireAuth, async (req, res) => {
 // @route   GET /api/circles/in-town
 // @desc    Get friends currently in the same city
 // @access  Private
-router.get('/in-town', requireAuth, async (req, res) => {
+router.get('/in-town', verifyToken, async (req, res) => {
   try {
     if (!req.user.currentLocation || !req.user.currentLocation.city) {
       return res.json({

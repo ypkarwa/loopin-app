@@ -1,12 +1,12 @@
 const express = require('express');
-const { requireAuth } = require('./auth');
+const { verifyToken } = require('./auth');
 const User = require('../models/User');
 const router = express.Router();
 
 // @route   GET /api/users/profile
 // @desc    Get user profile
 // @access  Private
-router.get('/profile', requireAuth, async (req, res) => {
+router.get('/profile', verifyToken, async (req, res) => {
   try {
     res.json({
       success: true,
@@ -33,7 +33,7 @@ router.get('/profile', requireAuth, async (req, res) => {
 // @route   PUT /api/users/profile
 // @desc    Update user profile
 // @access  Private
-router.put('/profile', requireAuth, async (req, res) => {
+router.put('/profile', verifyToken, async (req, res) => {
   try {
     const { name, phone, preferences } = req.body;
     
@@ -100,7 +100,7 @@ router.get('/by-link/:shareableLink', async (req, res) => {
 // @route   POST /api/users/search
 // @desc    Search users by name or email
 // @access  Private
-router.post('/search', requireAuth, async (req, res) => {
+router.post('/search', verifyToken, async (req, res) => {
   try {
     const { query } = req.body;
     
@@ -141,7 +141,7 @@ router.post('/search', requireAuth, async (req, res) => {
 // @route   DELETE /api/users/account
 // @desc    Delete user account
 // @access  Private
-router.delete('/account', requireAuth, async (req, res) => {
+router.delete('/account', verifyToken, async (req, res) => {
   try {
     await User.findByIdAndDelete(req.user._id);
     
