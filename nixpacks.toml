@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_18", "npm"]
+
+[phases.build]
+cmds = ["cd loopin-backend && npm install"]
+
+[phases.start]
+cmd = "cd loopin-backend && npm start" 

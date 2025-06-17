@@ -1,0 +1,20 @@
+{
+  "name": "loopin-app",
+  "version": "1.0.0",
+  "description": "LoopIn - Know when your friends are in town",
+  "main": "loopin-backend/server.js",
+  "scripts": {
+    "start": "cd loopin-backend && npm start",
+    "dev": "cd loopin-backend && npm run dev",
+    "install-backend": "cd loopin-backend && npm install",
+    "install-frontend": "cd circleback && npm install",
+    "build": "cd loopin-backend && npm install"
+  },
+  "keywords": ["location", "friends", "notifications", "social"],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+} 
