@@ -4,14 +4,14 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from loopin-backend directory
+COPY loopin-backend/package*.json ./
 
 # Install dependencies
 RUN npm install --only=production
 
-# Copy source code
-COPY . .
+# Copy source code from loopin-backend directory only
+COPY loopin-backend/ ./
 
 # Expose port
 EXPOSE 5000
