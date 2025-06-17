@@ -55,24 +55,53 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [state, dispatch] = useReducer(authReducer, initialState);
 
   useEffect(() => {
+    // Check for OAuth success parameter and token
+    const urlParams = new URLSearchParams(window.location.search);
+    const authStatus = urlParams.get('auth');
+    const token = urlParams.get('token');
+    
+    if (authStatus === 'success' && token) {
+      // Store the JWT token
+      localStorage.setItem('jwt_token', token);
+      
+      // Remove the auth parameters from URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('auth');
+      newUrl.searchParams.delete('token');
+      window.history.replaceState(null, '', newUrl.toString());
+    }
+    
     // Check authentication status on app start
     checkAuthStatus();
   }, []);
 
   const checkAuthStatus = async () => {
     try {
+      const token = localStorage.getItem('jwt_token');
+      
+      if (!token) {
+        dispatch({ type: 'SET_LOADING', payload: false });
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/auth/current`, {
-        credentials: 'include'
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       if (response.ok) {
         const data = await response.json();
         dispatch({ type: 'SET_USER', payload: data.user });
       } else {
+        // Token is invalid, remove it
+        localStorage.removeItem('jwt_token');
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     } catch (error) {
       console.error('Auth check error:', error);
+      localStorage.removeItem('jwt_token');
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
@@ -97,14 +126,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: 'POST',
-        credentials: 'include'
-      });
+      const token = localStorage.getItem('jwt_token');
+      
+      if (token) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Remove token from localStorage
+      localStorage.removeItem('jwt_token');
       dispatch({ type: 'LOGOUT' });
     } catch (error) {
       console.error('Logout error:', error);
       // Logout locally even if server request fails
+      localStorage.removeItem('jwt_token');
       dispatch({ type: 'LOGOUT' });
     }
   };

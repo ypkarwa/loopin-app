@@ -10,10 +10,24 @@ const router = express.Router();
 // @access  Private
 router.get('/', requireAuth, async (req, res) => {
   try {
+    console.log(`[DEBUG] Getting circles for user: ${req.user._id} (${req.user.name})`);
+    
     const circles = await Circle.getUserCircles(req.user._id);
+    console.log(`[DEBUG] Found ${circles.length} circles:`, circles.map(c => ({
+      id: c._id,
+      requester: c.requester._id,
+      recipient: c.recipient._id,
+      status: c.status
+    })));
     
     const friends = circles.map(circle => {
       const friend = circle.getOtherUser(req.user._id);
+      console.log(`[DEBUG] Processing circle ${circle._id}, other user:`, {
+        friendId: friend._id,
+        friendName: friend.name,
+        isRequester: circle.requester._id.toString() === req.user._id.toString()
+      });
+      
       return {
         id: friend._id,
         name: friend.name,
@@ -24,6 +38,8 @@ router.get('/', requireAuth, async (req, res) => {
         status: circle.status
       };
     });
+
+    console.log(`[DEBUG] Returning ${friends.length} friends for user ${req.user.name}`);
 
     res.json({
       success: true,
@@ -143,7 +159,11 @@ router.post('/:circleId/respond', requireAuth, async (req, res) => {
     }
 
     if (action === 'accept') {
+      console.log(`[DEBUG] Accepting friend request: Circle ${circleId}, Requester: ${circle.requester._id} (${circle.requester.name}), Recipient: ${req.user._id} (${req.user.name})`);
+      
       await circle.accept();
+      
+      console.log(`[DEBUG] Circle accepted successfully. Status: ${circle.status}`);
       
       // Create notification for requester
       await Notification.createFriendAccepted(req.user._id, circle.requester._id, circle._id);
