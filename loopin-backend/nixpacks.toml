@@ -1,11 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "npm"]
+nixPkgs = ["nodejs_18"]
 
 [phases.install]
-cmds = ["npm ci"]
-
-[phases.build]
-cmds = ["echo 'No build step needed'"]
+cmds = ["npm install"]
 
 [start]
 cmd = "npm start" 
