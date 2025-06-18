@@ -1,0 +1,22 @@
+[build]
+  base = "circleback"
+  command = "npm ci && npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_VERSION = "9"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[context.production.environment]
+  REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api"
+
+[context.deploy-preview.environment]
+  REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api"
+
+[context.branch-deploy.environment]
+  REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api" 

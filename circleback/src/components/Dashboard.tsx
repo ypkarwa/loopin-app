@@ -94,7 +94,20 @@ const Dashboard: React.FC = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setPeopleInTown(data.friendsInTown || []);
+        // Additional frontend filtering to ensure current user is never included
+        const filteredPeopleInTown = (data.friendsInTown || []).filter((person: PersonInTown) => {
+          const isNotCurrentUser = person.id !== user?.id && person.name !== user?.name;
+          console.log(`[DEBUG Frontend] Person in town: ${person.name}, isNotCurrentUser: ${isNotCurrentUser}`);
+          return isNotCurrentUser;
+        });
+        
+        // Remove duplicates based on ID
+        const uniquePeopleInTown = filteredPeopleInTown.filter((person: PersonInTown, index: number, array: PersonInTown[]) => {
+          return array.findIndex(p => p.id === person.id) === index;
+        });
+        
+        console.log(`[DEBUG Frontend] Fetched ${data.friendsInTown?.length || 0} people in town, filtered to ${uniquePeopleInTown.length}`);
+        setPeopleInTown(uniquePeopleInTown);
       }
     } catch (error) {
       console.error('Error fetching friends in town:', error);
@@ -424,18 +437,18 @@ const Dashboard: React.FC = () => {
         {/* Tab Content */}
         {activeTab === 'home' && (
           <div className="space-y-6">
-            {/* Welcome Message */}
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                Hey {user?.name}! 👋
-              </h2>
-              <p className="text-gray-600">
+        {/* Welcome Message */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            Hey {user?.name}! 👋
+          </h2>
+          <p className="text-gray-600">
                 {peopleInTown.length > 0 
                   ? `${peopleInTown.length} friend${peopleInTown.length > 1 ? 's' : ''} in town!`
                   : 'No friends in town yet. Share your link to connect with people!'
                 }
-              </p>
-            </div>
+          </p>
+        </div>
 
             {/* People in Town */}
             <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
@@ -739,29 +752,29 @@ const Dashboard: React.FC = () => {
        {activeTab === 'friends' && (
          <div className="space-y-6">
            {/* Your Link */}
-           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-             <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Link</h3>
-             <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-               <div className="flex-1 min-w-0">
-                 <p className="text-sm font-mono text-gray-900 truncate">
-                   {user?.shareableLink}
-                 </p>
-               </div>
-               <button
-                 onClick={copyLink}
-                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                   linkCopied
-                     ? 'bg-green-100 text-green-800'
-                     : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
-                 }`}
-               >
-                 {linkCopied ? 'Copied!' : 'Copy'}
-               </button>
-             </div>
-             <p className="text-xs text-gray-500">
-               Share this link with friends to add them to your circle
-             </p>
-           </div>
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Link</h3>
+          <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-mono text-gray-900 truncate">
+                {user?.shareableLink}
+              </p>
+            </div>
+            <button
+              onClick={copyLink}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                linkCopied
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
+              }`}
+            >
+              {linkCopied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            Share this link with friends to add them to your circle
+          </p>
+        </div>
 
            {/* Add Friend */}
            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
@@ -878,31 +891,31 @@ const Dashboard: React.FC = () => {
        {activeTab === 'requests' && (
          <div className="space-y-6">
            {/* Friend Requests */}
-           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-             <div className="flex items-center justify-between">
+        <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+          <div className="flex items-center justify-between">
                <h3 className="text-lg font-semibold text-gray-900">Friend Requests</h3>
                {friendRequests.length > 0 && (
                  <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs font-medium rounded-full">
                    {friendRequests.length}
-                 </span>
-               )}
-             </div>
-             
+              </span>
+            )}
+          </div>
+
              {isLoadingRequests ? (
-               <div className="text-center py-8">
+            <div className="text-center py-8">
                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto"></div>
                  <p className="mt-2 text-sm text-gray-500">Loading requests...</p>
-               </div>
+            </div>
              ) : friendRequests.length > 0 ? (
-               <div className="space-y-3">
+            <div className="space-y-3">
                  {friendRequests.map((request) => (
                    <div key={request.id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
                      <div className="flex items-center space-x-3">
                        <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                         <span className="text-white text-sm font-medium">
+                    <span className="text-white text-sm font-medium">
                            {getInitials(request.from.name)}
-                         </span>
-                       </div>
+                    </span>
+                  </div>
                        <div>
                          <p className="text-sm font-medium text-gray-900">{request.from.name}</p>
                          <p className="text-xs text-gray-500">{request.from.email}</p>
@@ -921,45 +934,45 @@ const Dashboard: React.FC = () => {
                        >
                          Decline
                        </button>
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             ) : (
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
                <div className="text-center py-12">
                  <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                 </svg>
+              </svg>
                  <h3 className="mt-4 text-lg font-medium text-gray-900">No pending requests</h3>
                  <p className="mt-2 text-sm text-gray-500">
                    Friend requests will appear here when someone wants to connect with you.
-                 </p>
-               </div>
-             )}
-           </div>
+              </p>
+            </div>
+          )}
+        </div>
          </div>
        )}
 
-       {/* Location Tracking Status */}
+        {/* Location Tracking Status */}
        <div className="mt-6 bg-white rounded-xl shadow-sm p-4">
-         <div className="flex items-center justify-between">
-           <div>
-             <h3 className="text-sm font-medium text-gray-900">Location Tracking</h3>
-             <p className="text-xs text-gray-500 mt-1">
-               {location.isTracking ? 'Active' : 'Inactive'}
-             </p>
-           </div>
-           <div className={`h-3 w-3 rounded-full ${location.isTracking ? 'bg-green-400' : 'bg-gray-300'}`} />
-         </div>
-         {location.lastUpdate && (
-           <p className="text-xs text-gray-500 mt-2">
-             Last updated: {formatTimeAgo(location.lastUpdate)}
-           </p>
-         )}
-       </div>
-     </div>
-   </div>
- );
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">Location Tracking</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {location.isTracking ? 'Active' : 'Inactive'}
+              </p>
+            </div>
+            <div className={`h-3 w-3 rounded-full ${location.isTracking ? 'bg-green-400' : 'bg-gray-300'}`} />
+          </div>
+          {location.lastUpdate && (
+            <p className="text-xs text-gray-500 mt-2">
+              Last updated: {formatTimeAgo(location.lastUpdate)}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default Dashboard; 

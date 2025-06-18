@@ -317,6 +317,8 @@ router.delete('/:friendId', verifyToken, async (req, res) => {
 // @access  Private
 router.get('/in-town', verifyToken, async (req, res) => {
   try {
+    console.log(`[DEBUG] Getting friends in town for user: ${req.user._id} (${req.user.name})`);
+    
     if (!req.user.currentLocation || !req.user.currentLocation.city) {
       return res.json({
         success: true,
@@ -327,14 +329,31 @@ router.get('/in-town', verifyToken, async (req, res) => {
     }
 
     const circles = await Circle.getUserCircles(req.user._id);
+    console.log(`[DEBUG] Found ${circles.length} circles for in-town check`);
     
     const friendsInTown = circles
-      .map(circle => circle.getOtherUser(req.user._id))
-      .filter(friend => 
-        friend.currentLocation && 
-        friend.currentLocation.city === req.user.currentLocation.city &&
-        friend.currentLocation.isPublic
-      )
+      .map(circle => {
+        const friend = circle.getOtherUser(req.user._id);
+        console.log(`[DEBUG] Checking friend: ${friend._id} (${friend.name}) - Current user: ${req.user._id}`);
+        
+        // Additional safety check to prevent self-inclusion
+        if (friend._id.toString() === req.user._id.toString()) {
+          console.log(`[WARNING] Skipping self-reference in in-town check`);
+          return null;
+        }
+        
+        return friend;
+      })
+      .filter(friend => friend !== null) // Remove any null entries
+      .filter(friend => {
+        const hasLocation = friend.currentLocation && friend.currentLocation.city;
+        const inSameCity = hasLocation && friend.currentLocation.city === req.user.currentLocation.city;
+        const isPublic = friend.currentLocation && friend.currentLocation.isPublic;
+        
+        console.log(`[DEBUG] Friend ${friend.name}: hasLocation=${hasLocation}, inSameCity=${inSameCity}, isPublic=${isPublic}`);
+        
+        return hasLocation && inSameCity && isPublic;
+      })
       .map(friend => ({
         id: friend._id,
         name: friend.name,
@@ -343,6 +362,8 @@ router.get('/in-town', verifyToken, async (req, res) => {
         country: friend.currentLocation.country,
         lastSeen: friend.currentLocation.lastUpdated || friend.lastActive
       }));
+
+    console.log(`[DEBUG] Returning ${friendsInTown.length} friends in town`);
 
     res.json({
       success: true,
