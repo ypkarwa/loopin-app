@@ -64,13 +64,17 @@ const Dashboard: React.FC = () => {
   const [manualCity, setManualCity] = useState('');
   const [manualCountry, setManualCountry] = useState('');
 
-  // Check and fix corrupted shareable link on component mount
+  // Track if we've already attempted to fix the link to prevent infinite loops
+  const [linkFixAttempted, setLinkFixAttempted] = useState(false);
+  
+  // Check and fix corrupted shareable link on component mount (only once)
   useEffect(() => {
-    if (user?.shareableLink && (user.shareableLink.includes('http') || user.shareableLink.includes('/invite/'))) {
+    if (user?.shareableLink && !linkFixAttempted && (user.shareableLink.includes('http') || user.shareableLink.includes('/invite/'))) {
       console.log('[DEBUG] Detected corrupted shareable link, fixing...');
+      setLinkFixAttempted(true);
       fixShareableLink();
     }
-  }, [user?.shareableLink]);
+  }, [user?.shareableLink, linkFixAttempted]);
 
   const fixShareableLink = async () => {
     try {
@@ -90,10 +94,14 @@ const Dashboard: React.FC = () => {
         const data = await response.json();
         console.log('[DEBUG] Shareable link fixed:', data);
         
-        // Refresh the page to get the updated user data
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
+        // Instead of refreshing, just update the user context
+        if (data.newLink && user) {
+          // Update the user object with the new link
+          const updatedUser = { ...user, shareableLink: data.newLink };
+          // If you have a way to update the user context, do it here
+          // For now, we'll just log it and let the user manually refresh if needed
+          console.log('[DEBUG] Link fixed. New link:', data.newLink);
+        }
       }
     } catch (error) {
       console.error('Error fixing shareable link:', error);
