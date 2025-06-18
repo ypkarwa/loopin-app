@@ -20,24 +20,34 @@ router.get('/', verifyToken, async (req, res) => {
       status: c.status
     })));
     
-    const friends = circles.map(circle => {
-      const friend = circle.getOtherUser(req.user._id);
-      console.log(`[DEBUG] Processing circle ${circle._id}, other user:`, {
-        friendId: friend._id,
-        friendName: friend.name,
-        isRequester: circle.requester._id.toString() === req.user._id.toString()
-      });
-      
-      return {
-        id: friend._id,
-        name: friend.name,
-        email: friend.email,
-        avatar: friend.avatar,
-        currentLocation: friend.currentLocation,
-        connectionDate: circle.respondedAt || circle.createdAt,
-        status: circle.status
-      };
-    });
+    // Filter and map friends, ensuring current user doesn't appear in their own list
+    const friends = circles
+      .map(circle => {
+        const friend = circle.getOtherUser(req.user._id);
+        
+        // Additional safety check to prevent self-inclusion
+        if (friend._id.toString() === req.user._id.toString()) {
+          console.log(`[WARNING] Skipping self-reference in circle ${circle._id}`);
+          return null;
+        }
+        
+        console.log(`[DEBUG] Processing circle ${circle._id}, other user:`, {
+          friendId: friend._id,
+          friendName: friend.name,
+          isRequester: circle.requester._id.toString() === req.user._id.toString()
+        });
+        
+        return {
+          id: friend._id,
+          name: friend.name,
+          email: friend.email,
+          avatar: friend.avatar,
+          currentLocation: friend.currentLocation,
+          connectionDate: circle.respondedAt || circle.createdAt,
+          status: circle.status
+        };
+      })
+      .filter(friend => friend !== null); // Remove any null entries
 
     console.log(`[DEBUG] Returning ${friends.length} friends for user ${req.user.name}`);
 
@@ -65,7 +75,7 @@ router.post('/request', verifyToken, async (req, res) => {
       // Find user by shareable link
       recipient = await User.findByShareableLink(shareableLink);
       if (!recipient) {
-        return res.status(404).json({ error: 'User not found' });
+        return res.status(404).json({ error: 'User not found with this link' });
       }
     } else if (recipientId) {
       // Find user by ID
@@ -77,21 +87,39 @@ router.post('/request', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Recipient ID or shareable link required' });
     }
 
-    // Prevent self-request
+    // Prevent self-request - Enhanced check
     if (recipient._id.toString() === req.user._id.toString()) {
-      return res.status(400).json({ error: 'Cannot add yourself to circle' });
+      console.log(`[WARNING] User ${req.user._id} attempted to send friend request to themselves`);
+      return res.status(400).json({ error: 'You cannot add yourself to your circle' });
     }
+
+    // Additional check with email to prevent any edge cases
+    if (recipient.email === req.user.email) {
+      console.log(`[WARNING] User ${req.user._id} attempted to send friend request to same email`);
+      return res.status(400).json({ error: 'You cannot add yourself to your circle' });
+    }
+
+    console.log(`[DEBUG] Processing friend request from ${req.user._id} (${req.user.email}) to ${recipient._id} (${recipient.email})`);
 
     // Check if connection already exists
     const existingCircle = await Circle.findCircleStatus(req.user._id, recipient._id);
     
     if (existingCircle) {
+      console.log(`[DEBUG] Existing circle found: Status ${existingCircle.status}`);
       if (existingCircle.status === 'accepted') {
-        return res.status(400).json({ error: 'Already in your circle' });
+        return res.status(400).json({ error: 'Already friends with this user' });
       } else if (existingCircle.status === 'pending') {
-        return res.status(400).json({ error: 'Circle request already pending' });
+        // Check who sent the original request
+        const isOriginalRequester = existingCircle.requester.toString() === req.user._id.toString();
+        if (isOriginalRequester) {
+          return res.status(400).json({ error: 'Friend request already sent to this user' });
+        } else {
+          return res.status(400).json({ error: 'This user has already sent you a friend request. Check your requests tab.' });
+        }
       } else if (existingCircle.status === 'blocked') {
         return res.status(400).json({ error: 'Cannot send request to this user' });
+      } else if (existingCircle.status === 'declined') {
+        return res.status(400).json({ error: 'Your previous request to this user was declined' });
       }
     }
 
@@ -103,30 +131,41 @@ router.post('/request', verifyToken, async (req, res) => {
     });
 
     await newCircle.save();
+    console.log(`[DEBUG] Created new circle request: ${newCircle._id}`);
 
     // Create notification for recipient
     await Notification.createFriendRequest(req.user._id, recipient._id, newCircle._id);
 
     // Emit real-time notification
     const io = req.app.get('io');
-    io.to(`user-${recipient._id}`).emit('new-notification', {
-      type: 'friend_request',
-      from: {
-        id: req.user._id,
-        name: req.user.name,
-        avatar: req.user.avatar
-      },
-      message: `${req.user.name} wants to add you to their circle`
-    });
+    if (io) {
+      io.to(`user-${recipient._id}`).emit('new-notification', {
+        type: 'friend_request',
+        from: {
+          id: req.user._id,
+          name: req.user.name,
+          avatar: req.user.avatar
+        },
+        message: `${req.user.name} wants to add you to their circle`
+      });
+    }
 
     res.json({
       success: true,
-      message: 'Circle request sent successfully',
-      circleId: newCircle._id
+      message: 'Friend request sent successfully',
+      circleId: newCircle._id,
+      recipient: {
+        name: recipient.name,
+        email: recipient.email
+      }
     });
   } catch (error) {
     console.error('Send circle request error:', error);
-    res.status(500).json({ error: 'Failed to send circle request' });
+    if (error.code === 11000) {
+      // Duplicate key error - request already exists
+      return res.status(400).json({ error: 'Friend request already exists with this user' });
+    }
+    res.status(500).json({ error: 'Failed to send friend request' });
   }
 });
 
@@ -142,14 +181,14 @@ router.post('/:circleId/respond', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid action. Use accept or decline' });
     }
 
-    const circle = await Circle.findById(circleId).populate('requester');
+    const circle = await Circle.findById(circleId).populate('requester recipient');
     
     if (!circle) {
       return res.status(404).json({ error: 'Circle request not found' });
     }
 
     // Verify user is the recipient
-    if (circle.recipient.toString() !== req.user._id.toString()) {
+    if (circle.recipient._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to respond to this request' });
     }
 
@@ -159,26 +198,34 @@ router.post('/:circleId/respond', verifyToken, async (req, res) => {
     }
 
     if (action === 'accept') {
-      console.log(`[DEBUG] Accepting friend request: Circle ${circleId}, Requester: ${circle.requester._id} (${circle.requester.name}), Recipient: ${req.user._id} (${req.user.name})`);
+      console.log(`[DEBUG] Accepting friend request: Circle ${circleId}`);
+      console.log(`[DEBUG] Requester: ${circle.requester._id} (${circle.requester.name})`);
+      console.log(`[DEBUG] Recipient: ${circle.recipient._id} (${circle.recipient.name})`);
       
       await circle.accept();
       
-      console.log(`[DEBUG] Circle accepted successfully. Status: ${circle.status}`);
+      console.log(`[DEBUG] Circle accepted successfully. Status: ${circle.status}, RespondedAt: ${circle.respondedAt}`);
+      
+      // Verify the circle was saved properly
+      const verifyCircle = await Circle.findById(circleId);
+      console.log(`[DEBUG] Verified circle status: ${verifyCircle.status}`);
       
       // Create notification for requester
       await Notification.createFriendAccepted(req.user._id, circle.requester._id, circle._id);
       
       // Emit real-time notification
       const io = req.app.get('io');
-      io.to(`user-${circle.requester._id}`).emit('new-notification', {
-        type: 'friend_accepted',
-        from: {
-          id: req.user._id,
-          name: req.user.name,
-          avatar: req.user.avatar
-        },
-        message: `${req.user.name} accepted your circle request`
-      });
+      if (io) {
+        io.to(`user-${circle.requester._id}`).emit('new-notification', {
+          type: 'friend_accepted',
+          from: {
+            id: req.user._id,
+            name: req.user.name,
+            avatar: req.user.avatar
+          },
+          message: `${req.user.name} accepted your circle request`
+        });
+      }
 
       res.json({
         success: true,
@@ -187,11 +234,14 @@ router.post('/:circleId/respond', verifyToken, async (req, res) => {
           id: circle.requester._id,
           name: circle.requester.name,
           email: circle.requester.email,
-          avatar: circle.requester.avatar
+          avatar: circle.requester.avatar,
+          currentLocation: circle.requester.currentLocation
         }
       });
     } else {
+      console.log(`[DEBUG] Declining friend request: Circle ${circleId}`);
       await circle.decline();
+      
       res.json({
         success: true,
         message: 'Circle request declined'

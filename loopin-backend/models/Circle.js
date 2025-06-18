@@ -39,6 +39,11 @@ circleSchema.index({ requester: 1, recipient: 1 }, { unique: true });
 
 // Static methods
 circleSchema.statics.findCircleStatus = function(userId1, userId2) {
+  // Ensure we don't allow self-circles
+  if (userId1.toString() === userId2.toString()) {
+    return null;
+  }
+  
   return this.findOne({
     $or: [
       { requester: userId1, recipient: userId2 },
@@ -49,21 +54,34 @@ circleSchema.statics.findCircleStatus = function(userId1, userId2) {
 
 circleSchema.statics.getUserCircles = function(userId, status = 'accepted') {
   return this.find({
-    $or: [
-      { requester: userId, status },
-      { recipient: userId, status }
+    $and: [
+      {
+        $or: [
+          { requester: userId, status },
+          { recipient: userId, status }
+        ]
+      },
+      // Ensure requester and recipient are different (prevent self-circles)
+      { $expr: { $ne: ['$requester', '$recipient'] } }
     ]
-  }).populate('requester recipient', 'name email avatar currentLocation');
+  }).populate('requester recipient', 'name email avatar currentLocation lastActive');
 };
 
 circleSchema.statics.getPendingRequests = function(userId) {
   return this.find({
     recipient: userId,
-    status: 'pending'
+    status: 'pending',
+    // Ensure requester is not the same as recipient
+    $expr: { $ne: ['$requester', '$recipient'] }
   }).populate('requester', 'name email avatar');
 };
 
 circleSchema.statics.areConnected = function(userId1, userId2) {
+  // Prevent self-connection checks
+  if (userId1.toString() === userId2.toString()) {
+    return null;
+  }
+  
   return this.findOne({
     $or: [
       { requester: userId1, recipient: userId2, status: 'accepted' },

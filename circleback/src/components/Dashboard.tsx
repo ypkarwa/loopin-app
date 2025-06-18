@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../hooks/useLocation';
 
@@ -55,6 +55,7 @@ const Dashboard: React.FC = () => {
   const [isAddingFriend, setIsAddingFriend] = useState(false);
   const [addFriendError, setAddFriendError] = useState('');
   const [addFriendSuccess, setAddFriendSuccess] = useState('');
+  const [removingFriendId, setRemovingFriendId] = useState<string | null>(null);
 
   // Fetch friends in town when location changes
   useEffect(() => {
@@ -77,6 +78,7 @@ const Dashboard: React.FC = () => {
       fetchFriendRequests();
       fetchFriends();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const fetchFriendsInTown = async () => {
@@ -135,7 +137,18 @@ const Dashboard: React.FC = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setFriends(data.friends || []);
+        // Additional frontend filtering to prevent any self-inclusion
+        const filteredFriends = (data.friends || []).filter((friend: Friend) => {
+          return friend.id !== user?.id && friend.email !== user?.email;
+        });
+        
+        // Remove duplicates based on ID
+        const uniqueFriends = filteredFriends.filter((friend: Friend, index: number, array: Friend[]) => {
+          return array.findIndex(f => f.id === friend.id) === index;
+        });
+        
+        console.log(`[DEBUG Frontend] Fetched ${data.friends?.length || 0} friends, filtered to ${uniqueFriends.length}`);
+        setFriends(uniqueFriends);
       }
     } catch (error) {
       console.error('Error fetching friends:', error);
@@ -233,19 +246,36 @@ const Dashboard: React.FC = () => {
       });
 
       if (response.ok) {
+        const data = await response.json();
+        
         // Remove the request from the list
         setFriendRequests(prev => prev.filter(req => req.id !== requestId));
-        // Refresh friends list if accepted
+        
         if (action === 'accept') {
-          fetchFriends();
-          fetchFriendsInTown(); // Update people in town
+          console.log('[DEBUG Frontend] Friend request accepted, refreshing data...');
+          
+          // Add a small delay to ensure backend has processed the acceptance
+          setTimeout(() => {
+            // Refresh all friend-related data
+            fetchFriends();
+            fetchFriendsInTown();
+          }, 500);
+          
+          // Show success message
+          if (data.friend) {
+            alert(`You are now friends with ${data.friend.name}!`);
+          }
+        } else {
+          console.log('[DEBUG Frontend] Friend request declined');
         }
       } else {
         const data = await response.json();
         console.error('Error responding to request:', data.error);
+        alert(data.error || `Failed to ${action} friend request`);
       }
     } catch (error) {
       console.error('Error responding to friend request:', error);
+      alert(`Failed to ${action} friend request`);
     }
   };
 
@@ -295,6 +325,42 @@ const Dashboard: React.FC = () => {
       )}
     </button>
   );
+
+  const removeFriend = async (friendId: string, friendName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${friendName} from your circle? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setRemovingFriendId(friendId);
+      const token = localStorage.getItem('jwt_token');
+      const response = await fetch(`${API_BASE_URL}/circles/${friendId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Remove friend from local state
+        setFriends(prev => prev.filter(friend => friend.id !== friendId));
+        setPeopleInTown(prev => prev.filter(person => person.id !== friendId));
+        
+        // Show success message briefly
+        const successMessage = `${friendName} has been removed from your circle.`;
+        alert(successMessage);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to remove friend');
+      }
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      alert('Failed to remove friend');
+    } finally {
+      setRemovingFriendId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -501,32 +567,32 @@ const Dashboard: React.FC = () => {
                             </span>
                           </div>
                           
-                                                     <div className="flex-1 min-w-0">
-                             <p className="text-sm font-semibold text-gray-900">{friend.name}</p>
-                             <div className="flex items-center space-x-2 mt-1">
-                               {hasLocation && friend.currentLocation ? (
-                                 <>
-                                   <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                   </svg>
-                                   <span className="text-xs text-gray-600">
-                                     {friend.currentLocation.city}, {friend.currentLocation.country}
-                                   </span>
-                                   {friend.currentLocation.lastUpdated && (
-                                     <>
-                                       <span className="text-gray-300">•</span>
-                                       <span className="text-xs text-gray-500">
-                                         {formatTimeAgo(friend.currentLocation.lastUpdated)}
-                                       </span>
-                                     </>
-                                   )}
-                                 </>
-                               ) : (
-                                 <span className="text-xs text-gray-500 italic">Location not shared</span>
-                               )}
-                             </div>
-                           </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900">{friend.name}</p>
+                            <div className="flex items-center space-x-2 mt-1">
+                              {hasLocation && friend.currentLocation ? (
+                                <>
+                                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  <span className="text-xs text-gray-600">
+                                    {friend.currentLocation.city}, {friend.currentLocation.country}
+                                  </span>
+                                  {friend.currentLocation.lastUpdated && (
+                                    <>
+                                      <span className="text-gray-300">•</span>
+                                      <span className="text-xs text-gray-500">
+                                        {formatTimeAgo(friend.currentLocation.lastUpdated)}
+                                      </span>
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-xs text-gray-500 italic">Location not shared</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                         
                         <div className="flex items-center space-x-3">
@@ -537,14 +603,14 @@ const Dashboard: React.FC = () => {
                             </div>
                           )}
                           
-                                                     {hasLocation && !isInTown && friend.currentLocation && (
-                             <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 rounded-full">
-                               <div className="h-1.5 w-1.5 bg-blue-500 rounded-full"></div>
-                               <span className="text-xs font-medium text-blue-700">
-                                 {friend.currentLocation.city}
-                               </span>
-                             </div>
-                           )}
+                          {hasLocation && !isInTown && friend.currentLocation && (
+                            <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 rounded-full">
+                              <div className="h-1.5 w-1.5 bg-blue-500 rounded-full"></div>
+                              <span className="text-xs font-medium text-blue-700">
+                                {friend.currentLocation.city}
+                              </span>
+                            </div>
+                          )}
                           
                           {!hasLocation && (
                             <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded-full">
@@ -552,6 +618,26 @@ const Dashboard: React.FC = () => {
                               <span className="text-xs font-medium text-gray-600">Offline</span>
                             </div>
                           )}
+                          
+                          {/* Remove Friend Button */}
+                          <button
+                            onClick={() => removeFriend(friend.id, friend.name)}
+                            disabled={removingFriendId === friend.id}
+                            className={`ml-2 p-1.5 rounded-full transition-colors ${
+                              removingFriendId === friend.id
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            title={`Remove ${friend.name}`}
+                          >
+                            {removingFriendId === friend.id ? (
+                              <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
                       </div>
                     );
@@ -592,268 +678,288 @@ const Dashboard: React.FC = () => {
 
                   return (
                     <div className="space-y-3">
-                                             {locationEntries.map(([locationStr, friendsInLocation]) => {
-                         const isCurrentCity = location.currentLocation && locationStr.includes(location.currentLocation.city);
-                         
-                         return (
-                                                     <div key={locationStr} className={`flex items-center justify-between p-3 rounded-lg ${
-                             isCurrentCity ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
-                           }`}>
-                             <div className="flex items-center space-x-3">
-                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                                 isCurrentCity 
-                                   ? 'bg-green-500 text-white' 
-                                   : locationStr === 'Unknown'
-                                   ? 'bg-gray-400 text-white'
-                                   : 'bg-blue-500 text-white'
-                               }`}>
-                                 {locationStr === 'Unknown' ? '?' : friendsInLocation.length}
-                               </div>
-                               
-                               <div>
-                                 <p className="text-sm font-medium text-gray-900">
-                                   {locationStr === 'Unknown' ? 'Location not shared' : locationStr}
-                                   {isCurrentCity && (
-                                     <span className="ml-2 text-xs text-green-600 font-medium">(Your city)</span>
-                                   )}
-                                 </p>
-                                <p className="text-xs text-gray-500">
-                                  {friendsInLocation.length} friend{friendsInLocation.length > 1 ? 's' : ''}
-                                </p>
+                      {locationEntries.map(([locationStr, friendsInLocation]) => {
+                        const isCurrentCity = location.currentLocation && locationStr.includes(location.currentLocation.city);
+                        
+                        return (
+                          <div key={locationStr} className={`flex items-center justify-between p-3 rounded-lg ${
+                            isCurrentCity ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
+                          }`}>
+                            <div className="flex items-center space-x-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
+                                isCurrentCity 
+                                  ? 'bg-green-500 text-white' 
+                                  : locationStr === 'Unknown'
+                                  ? 'bg-gray-400 text-white'
+                                  : 'bg-blue-500 text-white'
+                              }`}>
+                                {locationStr === 'Unknown' ? '?' : friendsInLocation.length}
                               </div>
-                            </div>
-                            
-                            <div className="flex -space-x-1">
-                              {friendsInLocation.slice(0, 3).map((friend, index) => (
-                                <div 
-                                  key={friend.id}
-                                  className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-xs font-medium text-white border-2 border-white"
-                                  title={friend.name}
-                                >
-                                  {getInitials(friend.name)[0]}
-                                </div>
-                              ))}
-                              {friendsInLocation.length > 3 && (
-                                <div className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-xs font-medium text-gray-600 border-2 border-white">
-                                  +{friendsInLocation.length - 3}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        )}
+                              
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {locationStr === 'Unknown' ? 'Location not shared' : locationStr}
+                                  {isCurrentCity && (
+                                    <span className="ml-2 text-xs text-green-600 font-medium">(Your city)</span>
+                                  )}
+                                </p>
+                               <p className="text-xs text-gray-500">
+                                 {friendsInLocation.length} friend{friendsInLocation.length > 1 ? 's' : ''}
+                               </p>
+                             </div>
+                           </div>
+                           
+                           <div className="flex -space-x-1">
+                             {friendsInLocation.slice(0, 3).map((friend, index) => (
+                               <div 
+                                 key={friend.id}
+                                 className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-xs font-medium text-white border-2 border-white"
+                                 title={friend.name}
+                               >
+                                 {getInitials(friend.name)[0]}
+                               </div>
+                             ))}
+                             {friendsInLocation.length > 3 && (
+                               <div className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-xs font-medium text-gray-600 border-2 border-white">
+                                 +{friendsInLocation.length - 3}
+                               </div>
+                             )}
+                           </div>
+                         </div>
+                       );
+                     })}
+                   </div>
+                 );
+               })()}
+             </div>
+           )}
+         </div>
+       )}
 
-        {activeTab === 'friends' && (
-          <div className="space-y-6">
-            {/* Your Link */}
-            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Link</h3>
-              <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-mono text-gray-900 truncate">
-                    {user?.shareableLink}
-                  </p>
-                </div>
-                <button
-                  onClick={copyLink}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    linkCopied
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
-                  }`}
-                >
-                  {linkCopied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500">
-                Share this link with friends to add them to your circle
-              </p>
-            </div>
+       {activeTab === 'friends' && (
+         <div className="space-y-6">
+           {/* Your Link */}
+           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+             <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Link</h3>
+             <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+               <div className="flex-1 min-w-0">
+                 <p className="text-sm font-mono text-gray-900 truncate">
+                   {user?.shareableLink}
+                 </p>
+               </div>
+               <button
+                 onClick={copyLink}
+                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                   linkCopied
+                     ? 'bg-green-100 text-green-800'
+                     : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
+                 }`}
+               >
+                 {linkCopied ? 'Copied!' : 'Copy'}
+               </button>
+             </div>
+             <p className="text-xs text-gray-500">
+               Share this link with friends to add them to your circle
+             </p>
+           </div>
 
-            {/* Add Friend */}
-            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Add Friend</h3>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="text"
-                    value={addFriendLink}
-                    onChange={(e) => setAddFriendLink(e.target.value)}
-                    placeholder="Paste friend's LoopIn link here..."
-                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                    disabled={isAddingFriend}
-                  />
-                  <button
-                    onClick={addFriend}
-                    disabled={isAddingFriend || !addFriendLink.trim()}
-                    className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                      isAddingFriend || !addFriendLink.trim()
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-primary-600 text-white hover:bg-primary-700'
-                    }`}
-                  >
-                    {isAddingFriend ? (
-                      <div className="flex items-center space-x-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        <span>Adding...</span>
-                      </div>
-                    ) : (
-                      'Send Request'
-                    )}
-                  </button>
-                </div>
-                
-                {addFriendError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">{addFriendError}</p>
-                  </div>
-                )}
-                
-                {addFriendSuccess && (
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-700">{addFriendSuccess}</p>
-                  </div>
-                )}
-              </div>
-            </div>
+           {/* Add Friend */}
+           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+             <h3 className="text-lg font-semibold text-gray-900">Add Friend</h3>
+             <div className="space-y-3">
+               <div className="flex items-center space-x-3">
+                 <input
+                   type="text"
+                   value={addFriendLink}
+                   onChange={(e) => setAddFriendLink(e.target.value)}
+                   placeholder="Paste friend's LoopIn link here..."
+                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                   disabled={isAddingFriend}
+                 />
+                 <button
+                   onClick={addFriend}
+                   disabled={isAddingFriend || !addFriendLink.trim()}
+                   className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                     isAddingFriend || !addFriendLink.trim()
+                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                       : 'bg-primary-600 text-white hover:bg-primary-700'
+                   }`}
+                 >
+                   {isAddingFriend ? (
+                     <div className="flex items-center space-x-2">
+                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                       <span>Adding...</span>
+                     </div>
+                   ) : (
+                     'Send Request'
+                   )}
+                 </button>
+               </div>
+               
+               {addFriendError && (
+                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                   <p className="text-sm text-red-700">{addFriendError}</p>
+                 </div>
+               )}
+               
+               {addFriendSuccess && (
+                 <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                   <p className="text-sm text-green-700">{addFriendSuccess}</p>
+                 </div>
+               )}
+             </div>
+           </div>
 
-            {/* Your Circle */}
-            {friends.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">Your Circle</h3>
-                  <span className="text-sm text-gray-500">{friends.length} friends</span>
-                </div>
-                <div className="space-y-3">
-                  {friends.map((friend) => (
-                    <div key={friend.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">
-                            {getInitials(friend.name)}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{friend.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {friend.currentLocation ? 
-                              `📍 ${friend.currentLocation.city}, ${friend.currentLocation.country}` : 
-                              'Location not shared'
-                            }
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center">
-                        {friend.currentLocation && location.currentLocation && 
-                         friend.currentLocation.city === location.currentLocation.city ? (
-                          <div className="flex items-center space-x-1">
-                            <div className="h-2 w-2 bg-green-400 rounded-full"></div>
-                            <span className="text-xs text-green-600 font-medium">In town</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">Away</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+           {/* Your Circle */}
+           {friends.length > 0 && (
+             <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+               <div className="flex items-center justify-between">
+                 <h3 className="text-lg font-semibold text-gray-900">Your Circle</h3>
+                 <span className="text-sm text-gray-500">{friends.length} friends</span>
+               </div>
+               <div className="space-y-3">
+                 {friends.map((friend) => (
+                   <div key={friend.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                     <div className="flex items-center space-x-3">
+                       <div className="h-10 w-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                         <span className="text-white text-sm font-medium">
+                           {getInitials(friend.name)}
+                         </span>
+                       </div>
+                       <div>
+                         <p className="text-sm font-medium text-gray-900">{friend.name}</p>
+                         <p className="text-xs text-gray-500">
+                           {friend.currentLocation ? 
+                             `📍 ${friend.currentLocation.city}, ${friend.currentLocation.country}` : 
+                             'Location not shared'
+                           }
+                         </p>
+                       </div>
+                     </div>
+                     <div className="flex items-center space-x-3">
+                       {friend.currentLocation && location.currentLocation && 
+                        friend.currentLocation.city === location.currentLocation.city ? (
+                         <div className="flex items-center space-x-1">
+                           <div className="h-2 w-2 bg-green-400 rounded-full"></div>
+                           <span className="text-xs text-green-600 font-medium">In town</span>
+                         </div>
+                       ) : (
+                         <span className="text-xs text-gray-400">Away</span>
+                       )}
+                       
+                       {/* Remove Friend Button */}
+                       <button
+                         onClick={() => removeFriend(friend.id, friend.name)}
+                         disabled={removingFriendId === friend.id}
+                         className={`p-1 rounded-full transition-colors ${
+                           removingFriendId === friend.id
+                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                             : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                         }`}
+                         title={`Remove ${friend.name}`}
+                       >
+                         {removingFriendId === friend.id ? (
+                           <div className="animate-spin h-3 w-3 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                         ) : (
+                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                           </svg>
+                         )}
+                       </button>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             </div>
+           )}
+         </div>
+       )}
 
-        {activeTab === 'requests' && (
-          <div className="space-y-6">
-            {/* Friend Requests */}
-            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Friend Requests</h3>
-                {friendRequests.length > 0 && (
-                  <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs font-medium rounded-full">
-                    {friendRequests.length}
-                  </span>
-                )}
-              </div>
-              
-              {isLoadingRequests ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-sm text-gray-500">Loading requests...</p>
-                </div>
-              ) : friendRequests.length > 0 ? (
-                <div className="space-y-3">
-                  {friendRequests.map((request) => (
-                    <div key={request.id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">
-                            {getInitials(request.from.name)}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{request.from.name}</p>
-                          <p className="text-xs text-gray-500">{request.from.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => respondToFriendRequest(request.id, 'accept')}
-                          className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-md hover:bg-green-700 transition-colors"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => respondToFriendRequest(request.id, 'decline')}
-                          className="px-3 py-1.5 bg-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-400 transition-colors"
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                  </svg>
-                  <h3 className="mt-4 text-lg font-medium text-gray-900">No pending requests</h3>
-                  <p className="mt-2 text-sm text-gray-500">
-                    Friend requests will appear here when someone wants to connect with you.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+       {activeTab === 'requests' && (
+         <div className="space-y-6">
+           {/* Friend Requests */}
+           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+             <div className="flex items-center justify-between">
+               <h3 className="text-lg font-semibold text-gray-900">Friend Requests</h3>
+               {friendRequests.length > 0 && (
+                 <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs font-medium rounded-full">
+                   {friendRequests.length}
+                 </span>
+               )}
+             </div>
+             
+             {isLoadingRequests ? (
+               <div className="text-center py-8">
+                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600 mx-auto"></div>
+                 <p className="mt-2 text-sm text-gray-500">Loading requests...</p>
+               </div>
+             ) : friendRequests.length > 0 ? (
+               <div className="space-y-3">
+                 {friendRequests.map((request) => (
+                   <div key={request.id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
+                     <div className="flex items-center space-x-3">
+                       <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                         <span className="text-white text-sm font-medium">
+                           {getInitials(request.from.name)}
+                         </span>
+                       </div>
+                       <div>
+                         <p className="text-sm font-medium text-gray-900">{request.from.name}</p>
+                         <p className="text-xs text-gray-500">{request.from.email}</p>
+                       </div>
+                     </div>
+                     <div className="flex items-center space-x-2">
+                       <button
+                         onClick={() => respondToFriendRequest(request.id, 'accept')}
+                         className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-md hover:bg-green-700 transition-colors"
+                       >
+                         Accept
+                       </button>
+                       <button
+                         onClick={() => respondToFriendRequest(request.id, 'decline')}
+                         className="px-3 py-1.5 bg-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-400 transition-colors"
+                       >
+                         Decline
+                       </button>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             ) : (
+               <div className="text-center py-12">
+                 <svg className="mx-auto h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                 </svg>
+                 <h3 className="mt-4 text-lg font-medium text-gray-900">No pending requests</h3>
+                 <p className="mt-2 text-sm text-gray-500">
+                   Friend requests will appear here when someone wants to connect with you.
+                 </p>
+               </div>
+             )}
+           </div>
+         </div>
+       )}
 
-        {/* Location Tracking Status */}
-        <div className="mt-6 bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium text-gray-900">Location Tracking</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                {location.isTracking ? 'Active' : 'Inactive'}
-              </p>
-            </div>
-            <div className={`h-3 w-3 rounded-full ${location.isTracking ? 'bg-green-400' : 'bg-gray-300'}`} />
-          </div>
-          {location.lastUpdate && (
-            <p className="text-xs text-gray-500 mt-2">
-              Last updated: {formatTimeAgo(location.lastUpdate)}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+       {/* Location Tracking Status */}
+       <div className="mt-6 bg-white rounded-xl shadow-sm p-4">
+         <div className="flex items-center justify-between">
+           <div>
+             <h3 className="text-sm font-medium text-gray-900">Location Tracking</h3>
+             <p className="text-xs text-gray-500 mt-1">
+               {location.isTracking ? 'Active' : 'Inactive'}
+             </p>
+           </div>
+           <div className={`h-3 w-3 rounded-full ${location.isTracking ? 'bg-green-400' : 'bg-gray-300'}`} />
+         </div>
+         {location.lastUpdate && (
+           <p className="text-xs text-gray-500 mt-2">
+             Last updated: {formatTimeAgo(location.lastUpdate)}
+           </p>
+         )}
+       </div>
+     </div>
+   </div>
+ );
 };
 
 export default Dashboard; 
