@@ -160,4 +160,72 @@ router.delete('/account', verifyToken, async (req, res) => {
   }
 });
 
+// @route   POST /api/users/fix-shareable-link
+// @desc    Fix corrupted shareable link
+// @access  Private
+router.post('/fix-shareable-link', verifyToken, async (req, res) => {
+  try {
+    const user = req.user;
+    
+    console.log(`[DEBUG] Current shareable link for ${user.name}:`, user.shareableLink);
+    
+    // Check if the shareable link is corrupted (contains URLs)
+    let needsFix = false;
+    let cleanLink = user.shareableLink;
+    
+    if (user.shareableLink.includes('http') || user.shareableLink.includes('/invite/')) {
+      needsFix = true;
+      
+      // Try to extract the original code
+      if (user.shareableLink.includes('/invite/')) {
+        const parts = user.shareableLink.split('/invite/');
+        cleanLink = parts[parts.length - 1];
+      }
+      
+      // Remove any remaining URL parts
+      if (cleanLink.includes('http')) {
+        const match = cleanLink.match(/[A-Za-z0-9]{8}/);
+        cleanLink = match ? match[0] : generateNewShareableLink();
+      }
+      
+      // If still corrupted, generate a new one
+      if (cleanLink.length !== 8 || !/^[A-Za-z0-9]+$/.test(cleanLink)) {
+        cleanLink = generateNewShareableLink();
+      }
+    }
+    
+    if (needsFix) {
+      console.log(`[DEBUG] Fixing shareable link from "${user.shareableLink}" to "${cleanLink}"`);
+      
+      user.shareableLink = cleanLink;
+      await user.save();
+      
+      res.json({
+        success: true,
+        message: 'Shareable link fixed',
+        oldLink: req.body.oldLink || 'corrupted',
+        newLink: cleanLink
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Shareable link is already valid',
+        link: user.shareableLink
+      });
+    }
+  } catch (error) {
+    console.error('Fix shareable link error:', error);
+    res.status(500).json({ error: 'Failed to fix shareable link' });
+  }
+});
+
+function generateNewShareableLink() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
 module.exports = router; 
