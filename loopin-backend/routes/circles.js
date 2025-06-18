@@ -12,11 +12,28 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     console.log(`[DEBUG] Getting circles for user: ${req.user._id} (${req.user.name})`);
     
-    const circles = await Circle.getUserCircles(req.user._id);
-    console.log(`[DEBUG] Found ${circles.length} circles:`, circles.map(c => ({
+    // First, let's get ALL circles involving this user (regardless of status)
+    const allCircles = await Circle.find({
+      $or: [
+        { requester: req.user._id },
+        { recipient: req.user._id }
+      ]
+    }).populate('requester recipient', 'name email avatar currentLocation lastActive');
+    
+    console.log(`[DEBUG] ALL circles for user ${req.user.name}:`, allCircles.map(c => ({
       id: c._id,
-      requester: c.requester._id,
-      recipient: c.recipient._id,
+      requester: `${c.requester._id} (${c.requester.name})`,
+      recipient: `${c.recipient._id} (${c.recipient.name})`,
+      status: c.status,
+      createdAt: c.createdAt,
+      respondedAt: c.respondedAt
+    })));
+    
+    const circles = await Circle.getUserCircles(req.user._id);
+    console.log(`[DEBUG] ACCEPTED circles for user ${req.user.name}:`, circles.map(c => ({
+      id: c._id,
+      requester: `${c.requester._id} (${c.requester.name})`,
+      recipient: `${c.recipient._id} (${c.recipient.name})`,
       status: c.status
     })));
     
@@ -34,7 +51,8 @@ router.get('/', verifyToken, async (req, res) => {
         console.log(`[DEBUG] Processing circle ${circle._id}, other user:`, {
           friendId: friend._id,
           friendName: friend.name,
-          isRequester: circle.requester._id.toString() === req.user._id.toString()
+          isRequester: circle.requester._id.toString() === req.user._id.toString(),
+          circleStatus: circle.status
         });
         
         return {
@@ -59,6 +77,49 @@ router.get('/', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Get circles error:', error);
     res.status(500).json({ error: 'Failed to get circles' });
+  }
+});
+
+// @route   GET /api/circles/debug/:userId
+// @desc    Debug circles for a specific user (development only)
+// @access  Private
+router.get('/debug/:userId', verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Get all circles involving this user
+    const allCircles = await Circle.find({
+      $or: [
+        { requester: userId },
+        { recipient: userId }
+      ]
+    }).populate('requester recipient', 'name email avatar');
+    
+    const acceptedCircles = await Circle.getUserCircles(userId);
+    
+    res.json({
+      success: true,
+      debug: {
+        userId,
+        allCircles: allCircles.map(c => ({
+          id: c._id,
+          requester: { id: c.requester._id, name: c.requester.name },
+          recipient: { id: c.recipient._id, name: c.recipient.name },
+          status: c.status,
+          createdAt: c.createdAt,
+          respondedAt: c.respondedAt
+        })),
+        acceptedCircles: acceptedCircles.map(c => ({
+          id: c._id,
+          requester: { id: c.requester._id, name: c.requester.name },
+          recipient: { id: c.recipient._id, name: c.recipient.name },
+          status: c.status
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Debug circles error:', error);
+    res.status(500).json({ error: 'Failed to debug circles' });
   }
 });
 

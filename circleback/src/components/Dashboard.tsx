@@ -150,9 +150,14 @@ const Dashboard: React.FC = () => {
       
       if (response.ok) {
         const data = await response.json();
+        console.log(`[DEBUG Frontend] Raw friends data from API:`, data.friends);
+        console.log(`[DEBUG Frontend] Current user:`, { id: user?.id, name: user?.name, email: user?.email });
+        
         // Additional frontend filtering to prevent any self-inclusion
         const filteredFriends = (data.friends || []).filter((friend: Friend) => {
-          return friend.id !== user?.id && friend.email !== user?.email;
+          const isNotCurrentUser = friend.id !== user?.id && friend.email !== user?.email;
+          console.log(`[DEBUG Frontend] Friend ${friend.name} (${friend.id}): isNotCurrentUser=${isNotCurrentUser}`);
+          return isNotCurrentUser;
         });
         
         // Remove duplicates based on ID
@@ -161,7 +166,10 @@ const Dashboard: React.FC = () => {
         });
         
         console.log(`[DEBUG Frontend] Fetched ${data.friends?.length || 0} friends, filtered to ${uniqueFriends.length}`);
+        console.log(`[DEBUG Frontend] Final friends list:`, uniqueFriends);
         setFriends(uniqueFriends);
+      } else {
+        console.error('Failed to fetch friends:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error fetching friends:', error);
