@@ -135,24 +135,65 @@ export const useLocation = () => {
     try {
       setLocationState(prev => ({ ...prev, isTracking: true }));
       setError(null);
+      setPermissionStatus('pending');
 
-      navigator.geolocation.getCurrentPosition(
-        handleLocationUpdate,
-        handleLocationError,
-        {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 300000,
+      // First try with quick, low accuracy for faster response
+      const quickOptions = {
+        enableHighAccuracy: false,
+        timeout: 5000, // 5 seconds
+        maximumAge: 60000, // 1 minute
+      };
+
+      // Fallback to high accuracy if quick fails
+      const preciseOptions = {
+        enableHighAccuracy: true,
+        timeout: 10000, // 10 seconds
+        maximumAge: 300000, // 5 minutes
+      };
+
+      // Try quick location first
+      const tryQuickLocation = () => {
+        return new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, quickOptions);
+        });
+      };
+
+      // Try precise location as fallback
+      const tryPreciseLocation = () => {
+        return new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, preciseOptions);
+        });
+      };
+
+      try {
+        // Try quick location first
+        console.log('[Location] Trying quick location detection...');
+        const position = await tryQuickLocation();
+        console.log('[Location] Quick location success');
+        setPermissionStatus('granted');
+        await handleLocationUpdate(position);
+      } catch (quickError) {
+        console.log('[Location] Quick location failed, trying precise location...');
+        try {
+          const position = await tryPreciseLocation();
+          console.log('[Location] Precise location success');
+          setPermissionStatus('granted');
+          await handleLocationUpdate(position);
+        } catch (preciseError) {
+          console.error('[Location] Both location attempts failed:', preciseError);
+          handleLocationError(preciseError as GeolocationPositionError);
+          return;
         }
-      );
+      }
 
+      // Set up watching with reasonable timeout
       const watchId = navigator.geolocation.watchPosition(
         handleLocationUpdate,
         handleLocationError,
         {
           enableHighAccuracy: false,
-          timeout: 30000,
-          maximumAge: 600000,
+          timeout: 15000, // 15 seconds
+          maximumAge: 300000, // 5 minutes
         }
       );
 
@@ -163,6 +204,39 @@ export const useLocation = () => {
       setLocationState(prev => ({ ...prev, isTracking: false }));
     }
   }, [handleLocationUpdate, handleLocationError]);
+
+  // Add a quick location request method
+  const requestQuickLocation = useCallback(async () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by this browser.');
+      return;
+    }
+
+    try {
+      setError(null);
+      console.log('[Location] Quick location request...');
+      
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          {
+            enableHighAccuracy: false,
+            timeout: 3000, // Very quick - 3 seconds
+            maximumAge: 30000, // 30 seconds
+          }
+        );
+      });
+
+      console.log('[Location] Quick location success');
+      await handleLocationUpdate(position);
+      setPermissionStatus('granted');
+    } catch (error) {
+      console.error('[Location] Quick location failed:', error);
+      // Don't show error for quick requests, just fall back to normal tracking
+      startTracking();
+    }
+  }, [handleLocationUpdate, startTracking]);
 
   const stopTracking = useCallback((watchId?: number) => {
     if (watchId) {
@@ -200,5 +274,6 @@ export const useLocation = () => {
     startTracking,
     stopTracking,
     requestPermission: startTracking,
+    requestQuickLocation,
   };
 }; 

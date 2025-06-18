@@ -60,6 +60,9 @@ const Dashboard: React.FC = () => {
   const [removingFriendId, setRemovingFriendId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
+  const [showManualLocation, setShowManualLocation] = useState(false);
+  const [manualCity, setManualCity] = useState('');
+  const [manualCountry, setManualCountry] = useState('');
 
   // Fetch friends in town when location changes
   useEffect(() => {
@@ -447,14 +450,71 @@ const Dashboard: React.FC = () => {
     setIsRefreshingLocation(true);
     try {
       console.log('[Dashboard] Manual location refresh triggered');
-      location.requestPermission();
+      
+      // Use quick location request if available, otherwise fall back to normal
+      if (location.requestQuickLocation) {
+        await location.requestQuickLocation();
+      } else {
+        location.requestPermission();
+      }
+      
       // Wait a bit for location to update
       setTimeout(() => {
         setIsRefreshingLocation(false);
-      }, 3000);
+      }, 4000);
     } catch (error) {
       console.error('Error refreshing location:', error);
       setIsRefreshingLocation(false);
+    }
+  };
+
+  const setManualLocation = async () => {
+    if (!manualCity.trim() || !manualCountry.trim()) {
+      alert('Please enter both city and country');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('jwt_token');
+      const response = await fetch(`${API_BASE_URL}/locations/update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          city: manualCity.trim(),
+          country: manualCountry.trim(),
+          isPublic: true,
+          isManual: true
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        const newLocation = {
+          id: Math.random().toString(36).substr(2, 9),
+          userId: user?.id || '',
+          city: manualCity.trim(),
+          country: manualCountry.trim(),
+          isPublic: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // This is a bit of a hack since we don't have direct access to setLocationState
+        // But the next refresh should pick up the updated location
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+
+        setShowManualLocation(false);
+        setManualCity('');
+        setManualCountry('');
+      }
+    } catch (error) {
+      console.error('Error setting manual location:', error);
+      alert('Failed to set location. Please try again.');
     }
   };
 
@@ -568,14 +628,66 @@ const Dashboard: React.FC = () => {
               <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-sm font-medium text-yellow-800">Location Access Needed</h3>
                 <p className="text-sm text-yellow-700 mt-1">{location.error}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={location.requestPermission}
+                    className="text-sm text-yellow-800 underline hover:text-yellow-900"
+                  >
+                    Try Again
+                  </button>
+                  <span className="text-yellow-600">•</span>
+                  <button
+                    onClick={() => setShowManualLocation(true)}
+                    className="text-sm text-yellow-800 underline hover:text-yellow-900"
+                  >
+                    Set Location Manually
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Location Input */}
+        {showManualLocation && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 className="text-sm font-medium text-blue-800 mb-3">Set Your Location Manually</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="City (e.g., Amravati)"
+                  value={manualCity}
+                  onChange={(e) => setManualCity(e.target.value)}
+                  className="px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="text"
+                  placeholder="Country (e.g., India)"
+                  value={manualCountry}
+                  onChange={(e) => setManualCountry(e.target.value)}
+                  className="px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-2">
                 <button
-                  onClick={location.requestPermission}
-                  className="mt-2 text-sm text-yellow-800 underline hover:text-yellow-900"
+                  onClick={setManualLocation}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
                 >
-                  Enable Location
+                  Set Location
+                </button>
+                <button
+                  onClick={() => {
+                    setShowManualLocation(false);
+                    setManualCity('');
+                    setManualCountry('');
+                  }}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
             </div>
