@@ -59,11 +59,40 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Join user's personal room for notifications
         newSocket.emit('join-user-room', user.id);
         console.log(`[Socket] Joined user room: user-${user.id}`);
+        
+        // Test the connection
+        newSocket.emit('test-message', { userId: user.id, message: 'Socket connected' });
       });
 
-      newSocket.on('disconnect', () => {
-        console.log('[Socket] Disconnected from server');
+      // Listen for room join confirmation
+      newSocket.on('room-joined', (data) => {
+        console.log('[Socket] Room joined confirmation:', data);
+      });
+
+      // Listen for test responses
+      newSocket.on('test-response', (data) => {
+        console.log('[Socket] Test response received:', data);
+      });
+
+      newSocket.on('connection-confirmed', (data) => {
+        console.log('[Socket] Connection confirmed:', data);
+      });
+
+      newSocket.on('disconnect', (reason) => {
+        console.log('[Socket] Disconnected from server:', reason);
         setIsConnected(false);
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.error('[Socket] Connection error:', error);
+        setIsConnected(false);
+      });
+
+      newSocket.on('reconnect', (attemptNumber) => {
+        console.log(`[Socket] Reconnected after ${attemptNumber} attempts`);
+        setIsConnected(true);
+        // Rejoin user room after reconnection
+        newSocket.emit('join-user-room', user.id);
       });
 
       // Listen for friend request notifications

@@ -58,6 +58,8 @@ const Dashboard: React.FC = () => {
   const [addFriendError, setAddFriendError] = useState('');
   const [addFriendSuccess, setAddFriendSuccess] = useState('');
   const [removingFriendId, setRemovingFriendId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
 
   // Fetch friends in town when location changes
   useEffect(() => {
@@ -86,25 +88,34 @@ const Dashboard: React.FC = () => {
   // Listen for real-time updates
   useEffect(() => {
     if (socket) {
+      console.log('[Dashboard] Setting up socket listeners');
+      
       // Listen for new friend requests
       socket.on('new-notification', (data) => {
+        console.log('[Dashboard] Received new-notification:', data);
         if (data.type === 'friend_request') {
-          console.log('[Dashboard] New friend request received');
-          fetchFriendRequests(); // Refresh friend requests
+          console.log('[Dashboard] New friend request received, refreshing...');
+          fetchFriendRequests();
         }
       });
 
       // Listen for friend acceptance
-      socket.on('friend-accepted', () => {
-        console.log('[Dashboard] Friend request accepted');
-        fetchFriends(); // Refresh friends list
-        fetchFriendsInTown(); // Refresh people in town
+      socket.on('friend-accepted', (data) => {
+        console.log('[Dashboard] Friend request accepted:', data);
+        fetchFriends();
+        fetchFriendsInTown();
       });
 
+      // Test socket connection
+      socket.emit('test-connection', { message: 'Dashboard connected' });
+      
       return () => {
+        console.log('[Dashboard] Cleaning up socket listeners');
         socket.off('new-notification');
         socket.off('friend-accepted');
       };
+    } else {
+      console.log('[Dashboard] No socket connection available');
     }
   }, [socket]);
 
@@ -415,6 +426,38 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const refreshAllData = async () => {
+    setIsRefreshing(true);
+    try {
+      console.log('[Dashboard] Manual refresh triggered');
+      await Promise.all([
+        fetchFriends(),
+        fetchFriendRequests(),
+        fetchFriendsInTown()
+      ]);
+      console.log('[Dashboard] Manual refresh completed');
+    } catch (error) {
+      console.error('Error during manual refresh:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const refreshLocation = async () => {
+    setIsRefreshingLocation(true);
+    try {
+      console.log('[Dashboard] Manual location refresh triggered');
+      location.requestPermission();
+      // Wait a bit for location to update
+      setTimeout(() => {
+        setIsRefreshingLocation(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Error refreshing location:', error);
+      setIsRefreshingLocation(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -428,9 +471,25 @@ const Dashboard: React.FC = () => {
               <h1 className="text-lg font-semibold text-gray-900">LoopIn</h1>
               <div className="flex items-center space-x-2">
                 {location.currentLocation && (
-                  <p className="text-sm text-gray-500">
-                    📍 {location.currentLocation.city}, {location.currentLocation.country}
-                  </p>
+                  <div className="flex items-center space-x-1">
+                    <p className="text-sm text-gray-500">
+                      📍 {location.currentLocation.city}, {location.currentLocation.country}
+                    </p>
+                    <button
+                      onClick={refreshLocation}
+                      disabled={isRefreshingLocation}
+                      className="text-gray-400 hover:text-gray-600 focus:outline-none"
+                      title="Refresh location"
+                    >
+                      {isRefreshingLocation ? (
+                        <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full"></div>
+                      ) : (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 )}
                 {isConnected && (
                   <div className="flex items-center space-x-1">
@@ -529,6 +588,28 @@ const Dashboard: React.FC = () => {
           <TabButton tab="all-friends" label="All Friends" />
           <TabButton tab="friends" label="Add Friends" />
           <TabButton tab="requests" label="Requests" badge={friendRequests.length} />
+        </div>
+
+        {/* Refresh Button */}
+        <div className="mb-4 flex justify-end">
+          <button
+            onClick={refreshAllData}
+            disabled={isRefreshing}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              isRefreshing
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
+            }`}
+          >
+            {isRefreshing ? (
+              <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
         </div>
 
         {/* Tab Content */}

@@ -95,6 +95,20 @@ io.on('connection', (socket) => {
   socket.on('join-user-room', (userId) => {
     socket.join(`user-${userId}`);
     console.log(`User ${userId} joined their room`);
+    
+    // Send confirmation back to user
+    socket.emit('room-joined', { userId, message: 'Successfully joined notification room' });
+  });
+
+  // Test connection handler
+  socket.on('test-message', (data) => {
+    console.log('Test message received:', data);
+    socket.emit('test-response', { message: 'Server received your test message', data });
+  });
+
+  socket.on('test-connection', (data) => {
+    console.log('Test connection:', data);
+    socket.emit('connection-confirmed', { message: 'Connection is working', timestamp: new Date() });
   });
   
   // Handle location updates
