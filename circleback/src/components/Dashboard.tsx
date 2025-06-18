@@ -64,6 +64,42 @@ const Dashboard: React.FC = () => {
   const [manualCity, setManualCity] = useState('');
   const [manualCountry, setManualCountry] = useState('');
 
+  // Check and fix corrupted shareable link on component mount
+  useEffect(() => {
+    if (user?.shareableLink && (user.shareableLink.includes('http') || user.shareableLink.includes('/invite/'))) {
+      console.log('[DEBUG] Detected corrupted shareable link, fixing...');
+      fixShareableLink();
+    }
+  }, [user?.shareableLink]);
+
+  const fixShareableLink = async () => {
+    try {
+      const token = localStorage.getItem('jwt_token');
+      const response = await fetch(`${API_BASE_URL}/users/fix-shareable-link`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          oldLink: user?.shareableLink
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DEBUG] Shareable link fixed:', data);
+        
+        // Refresh the page to get the updated user data
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error fixing shareable link:', error);
+    }
+  };
+
   // Fetch friends in town when location changes
   useEffect(() => {
     if (location.currentLocation?.city && user) {
@@ -349,14 +385,34 @@ const Dashboard: React.FC = () => {
   const copyLink = async () => {
     if (user?.shareableLink) {
       try {
+        console.log('[DEBUG] Raw shareableLink from user:', user.shareableLink);
+        console.log('[DEBUG] Current window.location:', window.location);
+        
+        // Clean the shareable link in case it contains extra data
+        let cleanShareableLink = user.shareableLink;
+        
+        // If the shareableLink somehow contains a full URL, extract just the code
+        if (cleanShareableLink.includes('/invite/')) {
+          cleanShareableLink = cleanShareableLink.split('/invite/').pop() || cleanShareableLink;
+        }
+        
+        // Remove any remaining URL parts
+        if (cleanShareableLink.includes('http')) {
+          // Extract just the alphanumeric code (should be 8 characters)
+          const match = cleanShareableLink.match(/[A-Za-z0-9]{8}/);
+          cleanShareableLink = match ? match[0] : cleanShareableLink;
+        }
+        
+        console.log('[DEBUG] Cleaned shareableLink:', cleanShareableLink);
+        
         // Get the base URL more reliably
         const isProduction = window.location.hostname === 'loopincircle.netlify.app';
         const baseUrl = isProduction 
           ? 'https://loopincircle.netlify.app' 
           : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
         
-        const fullInviteUrl = `${baseUrl}/invite/${user.shareableLink}`;
-        console.log('[DEBUG] Copying invite URL:', fullInviteUrl);
+        const fullInviteUrl = `${baseUrl}/invite/${cleanShareableLink}`;
+        console.log('[DEBUG] Final invite URL:', fullInviteUrl);
         
         await navigator.clipboard.writeText(fullInviteUrl);
         setLinkCopied(true);
@@ -1057,11 +1113,26 @@ const Dashboard: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-mono text-gray-900 truncate">
                     {user?.shareableLink ? (() => {
+                      // Clean the shareable link in case it contains extra data
+                      let cleanShareableLink = user.shareableLink;
+                      
+                      // If the shareableLink somehow contains a full URL, extract just the code
+                      if (cleanShareableLink.includes('/invite/')) {
+                        cleanShareableLink = cleanShareableLink.split('/invite/').pop() || cleanShareableLink;
+                      }
+                      
+                      // Remove any remaining URL parts
+                      if (cleanShareableLink.includes('http')) {
+                        // Extract just the alphanumeric code (should be 8 characters)
+                        const match = cleanShareableLink.match(/[A-Za-z0-9]{8}/);
+                        cleanShareableLink = match ? match[0] : cleanShareableLink;
+                      }
+                      
                       const isProduction = window.location.hostname === 'loopincircle.netlify.app';
                       const baseUrl = isProduction 
                         ? 'https://loopincircle.netlify.app' 
                         : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
-                      return `${baseUrl}/invite/${user.shareableLink}`;
+                      return `${baseUrl}/invite/${cleanShareableLink}`;
                     })() : 'Loading...'}
                   </p>
                 </div>
