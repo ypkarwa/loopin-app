@@ -69,31 +69,34 @@ router.put('/profile', verifyToken, async (req, res) => {
 });
 
 // @route   GET /api/users/by-link/:shareableLink
-// @desc    Get user by shareable link (for invitations)
+// @desc    Get user by shareable link (for invite pages)
 // @access  Public
 router.get('/by-link/:shareableLink', async (req, res) => {
   try {
     const { shareableLink } = req.params;
+    
+    console.log(`[DEBUG] Looking up user by shareable link: ${shareableLink}`);
     
     const user = await User.findByShareableLink(shareableLink);
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-    // Return limited user info for invitation preview
+    
+    // Return public user info (no sensitive data)
     res.json({
       success: true,
       user: {
         id: user._id,
         name: user.name,
+        email: user.email,
         avatar: user.avatar,
-        isVerified: user.isVerified
+        shareableLink: user.shareableLink
       }
     });
   } catch (error) {
     console.error('Get user by link error:', error);
-    res.status(500).json({ error: 'Failed to get user' });
+    res.status(500).json({ error: 'Failed to get user information' });
   }
 });
 

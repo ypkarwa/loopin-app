@@ -5,6 +5,7 @@ import { SocketProvider } from './contexts/SocketContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AuthCallback from './components/AuthCallback';
+import InvitePage from './components/InvitePage';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -23,6 +24,7 @@ const AppContent: React.FC = () => {
   return (
     <Routes>
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/invite/:inviteCode" element={<InvitePage />} />
       <Route path="/" element={isAuthenticated ? <Dashboard /> : <Login />} />
     </Routes>
   );

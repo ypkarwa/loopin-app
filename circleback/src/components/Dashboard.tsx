@@ -349,7 +349,8 @@ const Dashboard: React.FC = () => {
   const copyLink = async () => {
     if (user?.shareableLink) {
       try {
-        await navigator.clipboard.writeText(user.shareableLink);
+        const fullInviteUrl = `${window.location.origin}/invite/${user.shareableLink}`;
+        await navigator.clipboard.writeText(fullInviteUrl);
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
       } catch (err) {
@@ -1041,30 +1042,30 @@ const Dashboard: React.FC = () => {
 
        {activeTab === 'friends' && (
          <div className="space-y-6">
-           {/* Your Link */}
-        <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Link</h3>
-          <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-mono text-gray-900 truncate">
-                {user?.shareableLink}
+                       {/* Your Link */}
+            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Your LoopIn Invite Link</h3>
+              <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono text-gray-900 truncate">
+                    {`${window.location.origin}/invite/${user?.shareableLink}`}
+                  </p>
+                </div>
+                <button
+                  onClick={copyLink}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    linkCopied
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
+                  }`}
+                >
+                  {linkCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Send this link to friends - they can click it to send you a friend request instantly!
               </p>
             </div>
-            <button
-              onClick={copyLink}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                linkCopied
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-primary-100 text-primary-800 hover:bg-primary-200'
-              }`}
-            >
-              {linkCopied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-          <p className="text-xs text-gray-500">
-            Share this link with friends to add them to your circle
-          </p>
-        </div>
 
            {/* Add Friend */}
            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">

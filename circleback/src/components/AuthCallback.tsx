@@ -10,9 +10,15 @@ const AuthCallback: React.FC = () => {
     const authStatus = urlParams.get('auth');
     
     if (authStatus === 'success') {
-      // Authentication successful, redirect will happen via AuthContext
+      // Authentication successful, check for pending invite
       setTimeout(() => {
-        window.location.href = '/';
+        const pendingInvite = localStorage.getItem('pendingInvite');
+        if (pendingInvite) {
+          localStorage.removeItem('pendingInvite');
+          window.location.href = `/invite/${pendingInvite}`;
+        } else {
+          window.location.href = '/';
+        }
       }, 2000);
     } else if (authStatus === 'error') {
       // Authentication failed
