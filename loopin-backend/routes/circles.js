@@ -267,6 +267,31 @@ router.post('/:circleId/respond', verifyToken, async (req, res) => {
       
       console.log(`[DEBUG] Circle accepted successfully. Status: ${circle.status}, RespondedAt: ${circle.respondedAt}`);
       
+      // SOLUTION: Create bidirectional friendship
+      // Check if reverse circle already exists
+      const reverseCircle = await Circle.findOne({
+        requester: circle.recipient._id,
+        recipient: circle.requester._id
+      });
+      
+      if (!reverseCircle) {
+        console.log(`[DEBUG] Creating reverse circle for bidirectional friendship`);
+        const newReverseCircle = new Circle({
+          requester: circle.recipient._id,
+          recipient: circle.requester._id,
+          status: 'accepted',
+          connectionMethod: circle.connectionMethod,
+          respondedAt: new Date()
+        });
+        await newReverseCircle.save();
+        console.log(`[DEBUG] Reverse circle created: ${newReverseCircle._id}`);
+      } else if (reverseCircle.status !== 'accepted') {
+        console.log(`[DEBUG] Updating existing reverse circle to accepted`);
+        reverseCircle.status = 'accepted';
+        reverseCircle.respondedAt = new Date();
+        await reverseCircle.save();
+      }
+      
       // Verify the circle was saved properly
       const verifyCircle = await Circle.findById(circleId);
       console.log(`[DEBUG] Verified circle status: ${verifyCircle.status}`);
@@ -351,21 +376,40 @@ router.delete('/:friendId', verifyToken, async (req, res) => {
   try {
     const { friendId } = req.params;
     
-    const circle = await Circle.findCircleStatus(req.user._id, friendId);
+    console.log(`[DEBUG] Removing friendship between ${req.user._id} and ${friendId}`);
     
-    if (!circle) {
+    // Find all circles between these two users
+    const circles = await Circle.find({
+      $or: [
+        { requester: req.user._id, recipient: friendId },
+        { requester: friendId, recipient: req.user._id }
+      ]
+    });
+    
+    if (circles.length === 0) {
       return res.status(404).json({ error: 'Connection not found' });
     }
-
-    if (circle.status !== 'accepted') {
+    
+    // Check if they are actually friends (at least one accepted circle)
+    const hasAcceptedConnection = circles.some(circle => circle.status === 'accepted');
+    if (!hasAcceptedConnection) {
       return res.status(400).json({ error: 'Not connected to this user' });
     }
-
-    await Circle.findByIdAndDelete(circle._id);
+    
+    // Remove all circles between these users (bidirectional cleanup)
+    const deleteResult = await Circle.deleteMany({
+      $or: [
+        { requester: req.user._id, recipient: friendId },
+        { requester: friendId, recipient: req.user._id }
+      ]
+    });
+    
+    console.log(`[DEBUG] Removed ${deleteResult.deletedCount} circles between users`);
 
     res.json({
       success: true,
-      message: 'Friend removed from circle'
+      message: 'Friend removed from circle',
+      deletedCount: deleteResult.deletedCount
     });
   } catch (error) {
     console.error('Remove friend error:', error);
@@ -438,6 +482,67 @@ router.get('/in-town', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Get friends in town error:', error);
     res.status(500).json({ error: 'Failed to get friends in town' });
+  }
+});
+
+// @route   GET /api/circles/test-friendship/:friendEmail
+// @desc    Test friendship status between current user and another user by email
+// @access  Private
+router.get('/test-friendship/:friendEmail', verifyToken, async (req, res) => {
+  try {
+    const { friendEmail } = req.params;
+    
+    // Find the friend by email
+    const friend = await User.findOne({ email: friendEmail });
+    if (!friend) {
+      return res.status(404).json({ error: 'Friend not found' });
+    }
+    
+    console.log(`[TEST] Testing friendship between ${req.user.email} (${req.user._id}) and ${friend.email} (${friend._id})`);
+    
+    // Get ALL circles involving these two users
+    const allCircles = await Circle.find({
+      $or: [
+        { requester: req.user._id, recipient: friend._id },
+        { requester: friend._id, recipient: req.user._id }
+      ]
+    }).populate('requester recipient', 'name email');
+    
+    console.log(`[TEST] Found ${allCircles.length} circles between users`);
+    
+    // Test getUserCircles for current user
+    const currentUserCircles = await Circle.getUserCircles(req.user._id);
+    const currentUserFriends = currentUserCircles.map(c => c.getOtherUser(req.user._id));
+    const isFriendInCurrentUserList = currentUserFriends.some(f => f._id.toString() === friend._id.toString());
+    
+    // Test getUserCircles for friend
+    const friendCircles = await Circle.getUserCircles(friend._id);
+    const friendFriends = friendCircles.map(c => c.getOtherUser(friend._id));
+    const isCurrentUserInFriendList = friendFriends.some(f => f._id.toString() === req.user._id.toString());
+    
+    res.json({
+      success: true,
+      test: {
+        currentUser: { id: req.user._id, email: req.user.email, name: req.user.name },
+        friend: { id: friend._id, email: friend.email, name: friend.name },
+        allCirclesBetweenUsers: allCircles.map(c => ({
+          id: c._id,
+          requester: { id: c.requester._id, email: c.requester.email, name: c.requester.name },
+          recipient: { id: c.recipient._id, email: c.recipient.email, name: c.recipient.name },
+          status: c.status,
+          createdAt: c.createdAt,
+          respondedAt: c.respondedAt
+        })),
+        currentUserTotalFriends: currentUserCircles.length,
+        friendTotalFriends: friendCircles.length,
+        isFriendInCurrentUserList,
+        isCurrentUserInFriendList,
+        bidirectionalFriendship: isFriendInCurrentUserList && isCurrentUserInFriendList
+      }
+    });
+  } catch (error) {
+    console.error('Test friendship error:', error);
+    res.status(500).json({ error: 'Failed to test friendship' });
   }
 });
 
