@@ -349,7 +349,15 @@ const Dashboard: React.FC = () => {
   const copyLink = async () => {
     if (user?.shareableLink) {
       try {
-        const fullInviteUrl = `${window.location.origin}/invite/${user.shareableLink}`;
+        // Get the base URL more reliably
+        const isProduction = window.location.hostname === 'loopincircle.netlify.app';
+        const baseUrl = isProduction 
+          ? 'https://loopincircle.netlify.app' 
+          : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
+        
+        const fullInviteUrl = `${baseUrl}/invite/${user.shareableLink}`;
+        console.log('[DEBUG] Copying invite URL:', fullInviteUrl);
+        
         await navigator.clipboard.writeText(fullInviteUrl);
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
@@ -1048,7 +1056,13 @@ const Dashboard: React.FC = () => {
               <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-mono text-gray-900 truncate">
-                    {`${window.location.origin}/invite/${user?.shareableLink}`}
+                    {user?.shareableLink ? (() => {
+                      const isProduction = window.location.hostname === 'loopincircle.netlify.app';
+                      const baseUrl = isProduction 
+                        ? 'https://loopincircle.netlify.app' 
+                        : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
+                      return `${baseUrl}/invite/${user.shareableLink}`;
+                    })() : 'Loading...'}
                   </p>
                 </div>
                 <button
