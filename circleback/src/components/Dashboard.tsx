@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 import { useLocation } from '../hooks/useLocation';
 
 interface PersonInTown {
@@ -41,6 +42,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const { socket, isConnected, notifications, removeNotification } = useSocket();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'all-friends' | 'requests'>('home');
   const [peopleInTown, setPeopleInTown] = useState<PersonInTown[]>([]);
@@ -80,6 +82,31 @@ const Dashboard: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Listen for real-time updates
+  useEffect(() => {
+    if (socket) {
+      // Listen for new friend requests
+      socket.on('new-notification', (data) => {
+        if (data.type === 'friend_request') {
+          console.log('[Dashboard] New friend request received');
+          fetchFriendRequests(); // Refresh friend requests
+        }
+      });
+
+      // Listen for friend acceptance
+      socket.on('friend-accepted', () => {
+        console.log('[Dashboard] Friend request accepted');
+        fetchFriends(); // Refresh friends list
+        fetchFriendsInTown(); // Refresh people in town
+      });
+
+      return () => {
+        socket.off('new-notification');
+        socket.off('friend-accepted');
+      };
+    }
+  }, [socket]);
 
   const fetchFriendsInTown = async () => {
     try {
@@ -275,16 +302,21 @@ const Dashboard: React.FC = () => {
         if (action === 'accept') {
           console.log('[DEBUG Frontend] Friend request accepted, refreshing data...');
           
-          // Add a small delay to ensure backend has processed the acceptance
-          setTimeout(() => {
-            // Refresh all friend-related data
-            fetchFriends();
-            fetchFriendsInTown();
-          }, 500);
+          // Immediate refresh (real-time update)
+          fetchFriends();
+          fetchFriendsInTown();
           
           // Show success message
           if (data.friend) {
-            alert(`You are now friends with ${data.friend.name}!`);
+            // Create a success notification
+            const successNotification = {
+              id: Date.now().toString(),
+              type: 'general' as const,
+              message: `You are now friends with ${data.friend.name}!`,
+              timestamp: new Date(),
+              read: false
+            };
+            // You could add this to notifications if you want
           }
         } else {
           console.log('[DEBUG Frontend] Friend request declined');
@@ -394,23 +426,80 @@ const Dashboard: React.FC = () => {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-gray-900">LoopIn</h1>
-              {location.currentLocation && (
-                <p className="text-sm text-gray-500">
-                  📍 {location.currentLocation.city}, {location.currentLocation.country}
-                </p>
-              )}
+              <div className="flex items-center space-x-2">
+                {location.currentLocation && (
+                  <p className="text-sm text-gray-500">
+                    📍 {location.currentLocation.city}, {location.currentLocation.country}
+                  </p>
+                )}
+                {isConnected && (
+                  <div className="flex items-center space-x-1">
+                    <div className="h-2 w-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-green-600">Live</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="text-gray-500 hover:text-gray-700 focus:outline-none"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-          </button>
+          
+          <div className="flex items-center space-x-3">
+            {/* Notifications */}
+            {notifications.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => {/* You can implement a notification dropdown here */}}
+                  className="relative p-2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span className="absolute -top-1 -right-1 px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                      {notifications.filter(n => !n.read).length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+            
+            <button
+              onClick={logout}
+              className="text-gray-500 hover:text-gray-700 focus:outline-none"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* Real-time Notifications Banner */}
+      {notifications.filter(n => !n.read).slice(0, 1).map(notification => (
+        <div key={notification.id} className="bg-blue-50 border-b border-blue-200 px-4 py-3">
+          <div className="max-w-md mx-auto flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-blue-900">{notification.message}</p>
+                <p className="text-xs text-blue-600">{formatTimeAgo(notification.timestamp)}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => removeNotification(notification.id)}
+              className="text-blue-400 hover:text-blue-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      ))}
 
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Location Status */}

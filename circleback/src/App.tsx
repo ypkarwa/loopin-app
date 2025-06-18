@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SocketProvider } from './contexts/SocketContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AuthCallback from './components/AuthCallback';
@@ -30,9 +31,11 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <Router>
-        <AppContent />
-      </Router>
+      <SocketProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </SocketProvider>
     </AuthProvider>
   );
 };
