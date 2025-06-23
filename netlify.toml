@@ -14,9 +14,15 @@
 
 [context.production.environment]
   REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api"
+  REACT_APP_GOOGLE_MAPS_API_KEY = "AIzaSyATShiCRHjgcG6mVg0I063a0Oi_Q7JzPKo"
+  REACT_APP_LOCATION_FETCH_TIMES = "08:00,14:00,20:00"
 
 [context.deploy-preview.environment]
   REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api"
+  REACT_APP_GOOGLE_MAPS_API_KEY = "AIzaSyATShiCRHjgcG6mVg0I063a0Oi_Q7JzPKo"
+  REACT_APP_LOCATION_FETCH_TIMES = "08:00,14:00,20:00"
 
 [context.branch-deploy.environment]
-  REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api" 
+  REACT_APP_API_URL = "https://loopin-app-production.up.railway.app/api"
+  REACT_APP_GOOGLE_MAPS_API_KEY = "AIzaSyATShiCRHjgcG6mVg0I063a0Oi_Q7JzPKo"
+  REACT_APP_LOCATION_FETCH_TIMES = "08:00,14:00,20:00" 
