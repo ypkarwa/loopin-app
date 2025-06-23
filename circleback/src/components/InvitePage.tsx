@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { getApiBaseUrl } from '../utils/platform';
 
 interface InviteUser {
   id: string;
@@ -10,7 +11,7 @@ interface InviteUser {
   shareableLink: string;
 }
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = getApiBaseUrl();
 
 const InvitePage: React.FC = () => {
   const { inviteCode } = useParams<{ inviteCode: string }>();

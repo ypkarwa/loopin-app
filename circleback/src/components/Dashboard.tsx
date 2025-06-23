@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useLocation } from '../hooks/useLocation';
+import { getApiBaseUrl } from '../utils/platform';
+import LocationStatus from './LocationStatus';
 
 interface PersonInTown {
   id: string;
@@ -37,14 +39,14 @@ interface Friend {
   status: string;
 }
 
-// API base URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// API base URL - now using platform-aware utility
+const API_BASE_URL = getApiBaseUrl();
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const { socket, isConnected, notifications, removeNotification } = useSocket();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'all-friends' | 'requests'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'friends' | 'all-friends' | 'requests' | 'settings'>('home');
   const [peopleInTown, setPeopleInTown] = useState<PersonInTown[]>([]);
   const [linkCopied, setLinkCopied] = useState(false);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
@@ -524,12 +526,8 @@ const Dashboard: React.FC = () => {
     try {
       console.log('[Dashboard] Manual location refresh triggered');
       
-      // Use quick location request if available, otherwise fall back to normal
-      if (location.requestQuickLocation) {
-        await location.requestQuickLocation();
-      } else {
-        location.requestPermission();
-      }
+      // Use the new location update method
+      await location.updateLocation();
       
       // Wait a bit for location to update
       setTimeout(() => {
@@ -605,23 +603,10 @@ const Dashboard: React.FC = () => {
               <div className="flex items-center space-x-2">
                 {location.currentLocation && (
                   <div className="flex items-center space-x-1">
+                    <span className="text-lg">{location.locationSource === 'live' ? '🟢' : location.locationSource === 'cached' ? '🟡' : '📍'}</span>
                     <p className="text-sm text-gray-500">
-                      📍 {location.currentLocation.city}, {location.currentLocation.country}
+                      {location.currentLocation.city}, {location.currentLocation.country}
                     </p>
-                    <button
-                      onClick={refreshLocation}
-                      disabled={isRefreshingLocation}
-                      className="text-gray-400 hover:text-gray-600 focus:outline-none"
-                      title="Refresh location"
-                    >
-                      {isRefreshingLocation ? (
-                        <div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full"></div>
-                      ) : (
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      )}
-                    </button>
                   </div>
                 )}
                 {isConnected && (
@@ -694,78 +679,8 @@ const Dashboard: React.FC = () => {
       ))}
 
       <div className="max-w-md mx-auto px-4 py-6">
-        {/* Location Status */}
-        {location.error && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start space-x-3">
-              <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <div className="flex-1">
-                <h3 className="text-sm font-medium text-yellow-800">Location Access Needed</h3>
-                <p className="text-sm text-yellow-700 mt-1">{location.error}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={location.requestPermission}
-                    className="text-sm text-yellow-800 underline hover:text-yellow-900"
-                  >
-                    Try Again
-                  </button>
-                  <span className="text-yellow-600">•</span>
-                  <button
-                    onClick={() => setShowManualLocation(true)}
-                    className="text-sm text-yellow-800 underline hover:text-yellow-900"
-                  >
-                    Set Location Manually
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Manual Location Input */}
-        {showManualLocation && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <h3 className="text-sm font-medium text-blue-800 mb-3">Set Your Location Manually</h3>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="City (e.g., Amravati)"
-                  value={manualCity}
-                  onChange={(e) => setManualCity(e.target.value)}
-                  className="px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <input
-                  type="text"
-                  placeholder="Country (e.g., India)"
-                  value={manualCountry}
-                  onChange={(e) => setManualCountry(e.target.value)}
-                  className="px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={setManualLocation}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Set Location
-                </button>
-                <button
-                  onClick={() => {
-                    setShowManualLocation(false);
-                    setManualCity('');
-                    setManualCountry('');
-                  }}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Enhanced Location Status */}
+        <LocationStatus className="mb-6" showDetails={true} showSchedule={false} />
 
         {/* Tab Navigation */}
         <div className="flex space-x-1 mb-6 bg-white rounded-lg p-1 shadow-sm overflow-x-auto">
@@ -773,6 +688,7 @@ const Dashboard: React.FC = () => {
           <TabButton tab="all-friends" label="All Friends" />
           <TabButton tab="friends" label="Add Friends" />
           <TabButton tab="requests" label="Requests" badge={friendRequests.length} />
+          <TabButton tab="settings" label="Settings" />
         </div>
 
         {/* Refresh Button */}
@@ -1336,6 +1252,127 @@ const Dashboard: React.FC = () => {
         </div>
          </div>
        )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            {/* Enhanced Location Settings */}
+            <div className="bg-white rounded-xl shadow-sm p-6 space-y-6">
+              <h2 className="text-xl font-semibold text-gray-900">Location Settings</h2>
+              
+              {/* Full Location Status with Schedule */}
+              <LocationStatus showDetails={true} showSchedule={true} />
+              
+              {/* Location Preferences */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Preferences</h3>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Automatic Updates</p>
+                      <p className="text-xs text-gray-600">Updates location 3 times daily (8 AM, 2 PM, 8 PM)</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-green-600">Active</span>
+                      <div className="h-2 w-2 bg-green-400 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Fallback Mode</p>
+                      <p className="text-xs text-gray-600">Uses last known location when GPS is unavailable</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-blue-600">Enabled</span>
+                      <div className="h-2 w-2 bg-blue-400 rounded-full"></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Location Privacy</p>
+                      <p className="text-xs text-gray-600">Friends can see your city and country</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-600">Public</span>
+                      <div className="h-2 w-2 bg-gray-400 rounded-full"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* API Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">System Information</h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-blue-50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-blue-600 font-medium">Location Service</p>
+                    <p className="text-sm font-semibold text-blue-900">Google Maps</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-green-600 font-medium">Accuracy</p>
+                    <p className="text-sm font-semibold text-green-900">{location.currentLocation?.accuracy || 'N/A'}</p>
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-600 mb-2">Features:</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-green-500">✓</span>
+                      <span className="text-xs text-gray-700">Automatic scheduled updates</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-green-500">✓</span>
+                      <span className="text-xs text-gray-700">Smart caching for offline use</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-green-500">✓</span>
+                      <span className="text-xs text-gray-700">OpenStreetMap fallback</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-green-500">✓</span>
+                      <span className="text-xs text-gray-700">Real-time friend notifications</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Account Settings */}
+            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">Account</h3>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-10 w-10 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-medium">
+                        {user?.name ? getInitials(user.name) : 'U'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                      <p className="text-xs text-gray-600">{user?.email}</p>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Joined: {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                  </div>
+                </div>
+                
+                <button
+                  onClick={logout}
+                  className="w-full px-4 py-3 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 transition-colors border border-red-200"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Location Tracking Status */}
        <div className="mt-6 bg-white rounded-xl shadow-sm p-4">

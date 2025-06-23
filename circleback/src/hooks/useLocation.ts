@@ -1,25 +1,59 @@
 import { useState, useEffect, useCallback } from 'react';
-import { LocationState } from '../types';
-
-interface GeolocationPosition {
-  coords: {
-    latitude: number;
-    longitude: number;
-    accuracy: number;
-  };
-  timestamp: number;
-}
+import { Geolocation } from '@capacitor/geolocation';
+import { isNative } from '../utils/platform';
+import { googleMapsService, LocationResult } from '../services/googleMapsService';
+import { locationScheduler } from '../services/locationScheduler';
 
 interface CityInfo {
   city: string;
   country: string;
 }
 
-export const useLocation = () => {
+interface LocationData {
+  id: string;
+  userId: string;
+  city: string;
+  country: string;
+  isPublic: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  accuracy?: 'high' | 'medium' | 'low';
+  source?: 'live' | 'cached' | 'fallback';
+  fullAddress?: string;
+}
+
+interface LocationState {
+  currentLocation: LocationData | null;
+  isTracking: boolean;
+  lastUpdate: Date | null;
+  nextScheduledUpdates: { label: string; time: Date }[];
+}
+
+interface LocationStats {
+  totalUpdates: number;
+  successfulUpdates: number;
+  failedUpdates: number;
+  lastSuccessfulUpdate?: Date;
+  lastFailedUpdate?: Date;
+}
+
+interface UseLocationReturn extends LocationState {
+  error: string | null;
+  permissionStatus: 'granted' | 'denied' | 'pending';
+  updateLocation: () => Promise<void>;
+  startTracking: () => () => void;
+  getLocationStats: () => LocationStats;
+  isLocationFresh: () => boolean;
+  isSchedulerActive: boolean;
+  locationSource: string;
+}
+
+export const useLocation = (): UseLocationReturn => {
   const [locationState, setLocationState] = useState<LocationState>({
     currentLocation: null,
     isTracking: false,
     lastUpdate: null,
+    nextScheduledUpdates: []
   });
   
   const [error, setError] = useState<string | null>(null);
@@ -60,220 +94,209 @@ export const useLocation = () => {
     return newCityInfo.city !== locationState.currentLocation.city;
   }, [locationState.currentLocation]);
 
-  const handleLocationUpdate = useCallback(async (position: GeolocationPosition) => {
-    const { latitude, longitude } = position.coords;
-    
-    try {
-      const cityChanged = await hasLocationChanged(latitude, longitude);
-      
-      if (cityChanged) {
-        const cityInfo = await getCityFromCoordinates(latitude, longitude);
-        
-        const newLocation = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId: '',
-          city: cityInfo.city,
-          country: cityInfo.country,
-          isPublic: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        
-        setLocationState(prev => ({
-          ...prev,
-          currentLocation: newLocation,
-          lastUpdate: new Date(),
-        }));
-        
-        if (locationState.currentLocation) {
-          const shouldMakePublic = window.confirm(
-            `You're now in ${cityInfo.city}, ${cityInfo.country}! Do you want to let your circle know you're in town?`
-          );
-          
-          newLocation.isPublic = shouldMakePublic;
-          
-          if (shouldMakePublic) {
-            console.log('Sending notifications to friends in', cityInfo.city);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error handling location update:', error);
-      setError('Failed to update location information');
-    }
-  }, [hasLocationChanged, locationState.currentLocation]);
+  // Convert LocationResult to LocationData format
+  const convertLocationResult = useCallback((locationResult: LocationResult): LocationData => {
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: 'current-user', // This will be set by the component using this hook
+      city: locationResult.cityInfo.city,
+      country: locationResult.cityInfo.country,
+      isPublic: true,
+      createdAt: new Date(),
+      updatedAt: locationResult.timestamp,
+      accuracy: locationResult.cityInfo.accuracy,
+      source: locationResult.source,
+      fullAddress: locationResult.cityInfo.fullAddress
+    };
+  }, []);
 
-  const handleLocationError = useCallback((error: GeolocationPositionError) => {
-    let errorMessage = 'Location access denied';
+  // Handle location updates from scheduler
+  const handleLocationUpdate = useCallback((locationResult: LocationResult) => {
+    console.log('[useLocation] Received scheduled location update:', locationResult);
     
-    switch (error.code) {
-      case error.PERMISSION_DENIED:
-        errorMessage = 'Location access denied. Please enable location permissions.';
-        setPermissionStatus('denied');
-        break;
-      case error.POSITION_UNAVAILABLE:
-        errorMessage = 'Location information unavailable.';
-        break;
-      case error.TIMEOUT:
-        errorMessage = 'Location request timed out.';
-        break;
-      default:
-        errorMessage = 'An unknown error occurred while retrieving location.';
-        break;
-    }
+    const locationData = convertLocationResult(locationResult);
     
+    setLocationState(prev => ({
+      ...prev,
+      currentLocation: locationData,
+      lastUpdate: locationResult.timestamp,
+      isTracking: false
+    }));
+    
+    setError(null);
+  }, [convertLocationResult]);
+
+  // Handle location errors from scheduler
+  const handleLocationError = useCallback((errorMessage: string) => {
+    console.error('[useLocation] Location error:', errorMessage);
     setError(errorMessage);
     setLocationState(prev => ({ ...prev, isTracking: false }));
   }, []);
 
-  const startTracking = useCallback(async () => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by this browser.');
-      return;
+  // Initialize location scheduler
+  useEffect(() => {
+    console.log('[useLocation] Initializing location scheduler');
+    
+    // Start the scheduler with callbacks
+    locationScheduler.start(handleLocationUpdate, handleLocationError);
+    
+    // Get next scheduled update times
+    const nextUpdates = locationScheduler.getNextUpdateTimes();
+    setLocationState(prev => ({
+      ...prev,
+      nextScheduledUpdates: nextUpdates
+    }));
+
+    // Try to get the best available location immediately
+    const bestLocation = locationScheduler.getCurrentBestLocation();
+    if (bestLocation) {
+      const locationData = convertLocationResult(bestLocation);
+      setLocationState(prev => ({
+        ...prev,
+        currentLocation: locationData,
+        lastUpdate: bestLocation.timestamp
+      }));
     }
+
+    return () => {
+      locationScheduler.stop();
+    };
+  }, [handleLocationUpdate, handleLocationError, convertLocationResult]);
+
+  // Fallback geolocation for mobile devices
+  const getCurrentPositionFallback = async (): Promise<GeolocationPosition | null> => {
+    try {
+      if (isNative()) {
+        // Use Capacitor Geolocation for mobile
+        const permissions = await Geolocation.checkPermissions();
+        
+        if (permissions.location !== 'granted') {
+          const requestResult = await Geolocation.requestPermissions();
+          if (requestResult.location !== 'granted') {
+            setPermissionStatus('denied');
+            setError('Location permission denied');
+            return null;
+          }
+        }
+        
+        setPermissionStatus('granted');
+        
+        const position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 10000
+        });
+        
+        // Convert Capacitor position to standard GeolocationPosition format
+        return {
+          coords: {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            altitude: position.coords.altitude,
+            altitudeAccuracy: position.coords.altitudeAccuracy,
+            heading: position.coords.heading,
+            speed: position.coords.speed
+          },
+          timestamp: position.timestamp
+        } as GeolocationPosition;
+      } else {
+        // Use browser geolocation for web
+        return new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error('Geolocation is not supported'));
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setPermissionStatus('granted');
+              resolve(position);
+            },
+            (error) => {
+              setPermissionStatus('denied');
+              setError(error.message);
+              reject(error);
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 300000 // 5 minutes
+            }
+          );
+        });
+      }
+    } catch (error: any) {
+      console.error('Error getting current position:', error);
+      setError(error.message || 'Failed to get location');
+      return null;
+    }
+  };
+
+  // Manual location update
+  const updateLocation = useCallback(async () => {
+    if (locationState.isTracking) return;
 
     try {
       setLocationState(prev => ({ ...prev, isTracking: true }));
       setError(null);
-      setPermissionStatus('pending');
 
-      // First try with quick, low accuracy for faster response
-      const quickOptions = {
-        enableHighAccuracy: false,
-        timeout: 5000, // 5 seconds
-        maximumAge: 60000, // 1 minute
-      };
+      console.log('[useLocation] Manual location update requested');
+      
+      // Use the location scheduler's force update method
+      const locationResult = await locationScheduler.forceUpdate();
+      
+      const locationData = convertLocationResult(locationResult);
+      
+      setLocationState(prev => ({
+        ...prev,
+        currentLocation: locationData,
+        lastUpdate: locationResult.timestamp,
+        isTracking: false,
+        nextScheduledUpdates: locationScheduler.getNextUpdateTimes()
+      }));
 
-      // Fallback to high accuracy if quick fails
-      const preciseOptions = {
-        enableHighAccuracy: true,
-        timeout: 10000, // 10 seconds
-        maximumAge: 300000, // 5 minutes
-      };
-
-      // Try quick location first
-      const tryQuickLocation = () => {
-        return new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, quickOptions);
-        });
-      };
-
-      // Try precise location as fallback
-      const tryPreciseLocation = () => {
-        return new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, preciseOptions);
-        });
-      };
-
-      try {
-        // Try quick location first
-        console.log('[Location] Trying quick location detection...');
-        const position = await tryQuickLocation();
-        console.log('[Location] Quick location success');
-        setPermissionStatus('granted');
-        await handleLocationUpdate(position);
-      } catch (quickError) {
-        console.log('[Location] Quick location failed, trying precise location...');
-        try {
-          const position = await tryPreciseLocation();
-          console.log('[Location] Precise location success');
-          setPermissionStatus('granted');
-          await handleLocationUpdate(position);
-        } catch (preciseError) {
-          console.error('[Location] Both location attempts failed:', preciseError);
-          handleLocationError(preciseError as GeolocationPositionError);
-          return;
-        }
-      }
-
-      // Set up watching with reasonable timeout
-      const watchId = navigator.geolocation.watchPosition(
-        handleLocationUpdate,
-        handleLocationError,
-        {
-          enableHighAccuracy: false,
-          timeout: 15000, // 15 seconds
-          maximumAge: 300000, // 5 minutes
-        }
-      );
-
-      return watchId;
-    } catch (error) {
-      console.error('Error starting location tracking:', error);
-      setError('Failed to start location tracking');
+    } catch (error: any) {
+      console.error('Manual location update error:', error);
+      setError(error.message || 'Failed to update location');
       setLocationState(prev => ({ ...prev, isTracking: false }));
     }
-  }, [handleLocationUpdate, handleLocationError]);
+  }, [locationState.isTracking, convertLocationResult]);
 
-  // Add a quick location request method
-  const requestQuickLocation = useCallback(async () => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by this browser.');
-      return;
-    }
+  // Start tracking (legacy compatibility)
+  const startTracking = useCallback(() => {
+    // The scheduler is already running, but we can trigger an immediate update
+    updateLocation();
+    
+    // Return a cleanup function for compatibility
+    return () => {
+      console.log('[useLocation] Tracking cleanup called');
+    };
+  }, [updateLocation]);
 
-    try {
-      setError(null);
-      console.log('[Location] Quick location request...');
-      
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          {
-            enableHighAccuracy: false,
-            timeout: 3000, // Very quick - 3 seconds
-            maximumAge: 30000, // 30 seconds
-          }
-        );
-      });
-
-      console.log('[Location] Quick location success');
-      await handleLocationUpdate(position);
-      setPermissionStatus('granted');
-    } catch (error) {
-      console.error('[Location] Quick location failed:', error);
-      // Don't show error for quick requests, just fall back to normal tracking
-      startTracking();
-    }
-  }, [handleLocationUpdate, startTracking]);
-
-  const stopTracking = useCallback((watchId?: number) => {
-    if (watchId) {
-      navigator.geolocation.clearWatch(watchId);
-    }
-    setLocationState(prev => ({ ...prev, isTracking: false }));
+  // Get location update statistics
+  const getLocationStats = useCallback((): LocationStats => {
+    return locationScheduler.getUpdateStats();
   }, []);
 
-  useEffect(() => {
-    let watchId: number;
-
-    const initializeTracking = async () => {
-      if (navigator.geolocation) {
-        try {
-          watchId = await startTracking() || 0;
-        } catch (error) {
-          console.error('Error initializing location tracking:', error);
-        }
-      }
-    };
-
-    initializeTracking();
-
-    return () => {
-      if (watchId) {
-        stopTracking(watchId);
-      }
-    };
-  }, [startTracking, stopTracking]);
+  // Check if location is fresh (updated within last 8 hours)
+  const isLocationFresh = useCallback((): boolean => {
+    if (!locationState.lastUpdate) return false;
+    
+    const now = new Date();
+    const hoursDiff = (now.getTime() - locationState.lastUpdate.getTime()) / (1000 * 60 * 60);
+    return hoursDiff < 8;
+  }, [locationState.lastUpdate]);
 
   return {
     ...locationState,
     error,
     permissionStatus,
+    updateLocation,
     startTracking,
-    stopTracking,
-    requestPermission: startTracking,
-    requestQuickLocation,
+    getLocationStats,
+    isLocationFresh,
+    // Additional status information
+    isSchedulerActive: true,
+    locationSource: locationState.currentLocation?.source || 'unknown'
   };
 }; 

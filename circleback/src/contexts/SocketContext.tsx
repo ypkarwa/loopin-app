@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getSocketUrl } from '../utils/platform';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -34,7 +35,7 @@ export const useSocket = () => {
   return context;
 };
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const SOCKET_URL = getSocketUrl();
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -47,7 +48,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log('[Socket] Connecting to server...');
       
       // Create socket connection
-      const newSocket = io(API_BASE_URL, {
+      const newSocket = io(SOCKET_URL, {
         withCredentials: true,
         transports: ['websocket', 'polling']
       });

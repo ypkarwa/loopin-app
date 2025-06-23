@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { App as CapacitorApp } from '@capacitor/app';
+import { isNative } from './utils/platform';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AuthCallback from './components/AuthCallback';
@@ -31,6 +33,42 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  useEffect(() => {
+    // Mobile-specific initialization
+    if (isNative()) {
+      // Handle app state changes
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        console.log('App state changed. Is active?', isActive);
+      });
+
+      // Handle back button on Android
+      CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+        if (!canGoBack) {
+          CapacitorApp.exitApp();
+        } else {
+          window.history.back();
+        }
+      });
+
+      // Handle deep links
+      CapacitorApp.addListener('appUrlOpen', (event) => {
+        console.log('App opened via URL:', event.url);
+        // Handle invite links when app is opened from external link
+        const url = new URL(event.url);
+        if (url.pathname.includes('/invite/')) {
+          const inviteCode = url.pathname.split('/invite/')[1];
+          window.location.href = `/invite/${inviteCode}`;
+        }
+      });
+    }
+
+    return () => {
+      if (isNative()) {
+        CapacitorApp.removeAllListeners();
+      }
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <SocketProvider>

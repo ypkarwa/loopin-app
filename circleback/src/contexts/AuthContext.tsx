@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { AuthState, User, LoginMethod } from '../types';
+import { getApiBaseUrl } from '../utils/platform';
 
 interface AuthContextType extends AuthState {
   login: (method: LoginMethod) => Promise<void>;
@@ -48,8 +49,8 @@ const initialState: AuthState = {
   isAuthenticated: false,
 };
 
-// API base URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// API base URL - now using platform-aware utility
+const API_BASE_URL = getApiBaseUrl();
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
